@@ -64,11 +64,36 @@ public enum ExtensionLog {
     }
 }
 
-/// Optional PIN hand-off from the app to the extension, in case the system shows no PIN UI on iOS.
+/// PIN hand-off to the CryptoTokenKit extension, which has no UI of its own and gets no PIN prompt
+/// from iOS. Entered in the app or in the Safari extension popup; valid for a limited time.
+/// Protected by the device lock only (the token extension can't show Face ID).
 public enum SharedPin {
     private static let account = "user-pin"
+    private static let expiryAccount = "user-pin-expiry"
+    public static let lifetime: TimeInterval = 24 * 3600
 
-    public static func store(_ pin: String) { SharedKeychain.set(Data(pin.utf8), account: account) }
-    public static func load() -> String? { SharedKeychain.get(account: account).map { String(decoding: $0, as: UTF8.self) } }
-    public static func clear() { SharedKeychain.delete(account: account) }
+    public static func store(_ pin: String, now: Date = .now) {
+        SharedKeychain.set(Data(pin.utf8), account: account)
+        SharedKeychain.set(Data(String(now.addingTimeInterval(lifetime).timeIntervalSince1970).utf8), account: expiryAccount)
+    }
+
+    /// The PIN if one was handed over and hasn't expired; an expired one is deleted.
+    public static func load(now: Date = .now) -> String? {
+        guard let expiry = expiry, expiry > now else {
+            clear()
+            return nil
+        }
+        return SharedKeychain.get(account: account).map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    public static var expiry: Date? {
+        SharedKeychain.get(account: expiryAccount)
+            .flatMap { TimeInterval(String(decoding: $0, as: UTF8.self)) }
+            .map(Date.init(timeIntervalSince1970:))
+    }
+
+    public static func clear() {
+        SharedKeychain.delete(account: account)
+        SharedKeychain.delete(account: expiryAccount)
+    }
 }

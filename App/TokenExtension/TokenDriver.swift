@@ -4,7 +4,19 @@ import TokenKit
 /// CryptoTokenKit driver for Rutoken: makes certificates registered by the app usable as system
 /// identities (WKWebView client certificates); signatures are produced by the token via PKCS#11.
 final class TokenDriver: TKTokenDriver, TKTokenDriverDelegate {
+    /// The USB token is visible to PKCS#11 only while RtPcsc reader discovery runs in this process.
+    static let readerMonitor: ReaderMonitor = {
+        let monitor = ReaderMonitor()
+        Task {
+            for await readers in await monitor.start() {
+                ExtensionLog.append("readers: \(readers.map(\.name))")
+            }
+        }
+        return monitor
+    }()
+
     func tokenDriver(_ driver: TKTokenDriver, tokenFor configuration: TKToken.Configuration) throws -> TKToken {
+        _ = Self.readerMonitor
         ExtensionLog.append("tokenFor \(configuration.instanceID)")
         return RutokenToken(tokenDriver: self, instanceID: configuration.instanceID)
     }
@@ -49,7 +61,15 @@ final class RutokenToken: TKToken, TKTokenDelegate {
 
     private func currentSlot() throws -> UInt {
         let serial = serialNumber
-        guard let slot = try blocking({ try await Self.service?.slot(serialNumber: serial) }) else {
+        // Right after the extension starts, reader discovery may not have found the token yet.
+        let slot = try blocking { () -> UInt? in
+            for _ in 0..<30 {
+                if let slot = try await Self.service?.slot(serialNumber: serial) { return slot }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            return nil
+        }
+        guard let slot else {
             ExtensionLog.append("token \(serial) not connected")
             throw TKError(.tokenNotFound)
         }

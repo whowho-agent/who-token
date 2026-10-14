@@ -35,6 +35,7 @@ targets:
       - package: ProxyKit
         product: ProxyKit
       - target: RutokenTokenExtension
+      - target: RutokenSafariExtension
     entitlements:
       path: App/RutokenBrowser.app.entitlements
       properties:
@@ -108,5 +109,49 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(RB_BUNDLE_ID).TokenExtension
+        TARGETED_DEVICE_FAMILY: "1,2"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+
+  # Safari toolbar button with a PIN field: the token extension gets no PIN prompt from iOS,
+  # so the PIN is entered here and shared with it through the keychain.
+  RutokenSafariExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: App/SafariExtension/SafariWebExtensionHandler.swift
+      - path: App/SafariExtension/Resources/manifest.json
+        buildPhase: resources
+      - path: App/SafariExtension/Resources/popup.html
+        buildPhase: resources
+      - path: App/SafariExtension/Resources/popup.css
+        buildPhase: resources
+      - path: App/SafariExtension/Resources/popup.js
+        buildPhase: resources
+      - path: App/SafariExtension/Resources/images
+        type: folder
+        buildPhase: resources
+      - path: App/SafariExtension/Resources/_locales
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: TokenKit
+        product: TokenKit
+        embed: false
+    entitlements:
+      path: App/SafariExtension/RutokenSafariExtension.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(RB_BUNDLE_ID).shared
+    info:
+      path: App/SafariExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Рутокен
+        RBSharedKeychainGroup: $(AppIdentifierPrefix)$(RB_BUNDLE_ID).shared
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(RB_BUNDLE_ID).SafariExtension
         TARGETED_DEVICE_FAMILY: "1,2"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"

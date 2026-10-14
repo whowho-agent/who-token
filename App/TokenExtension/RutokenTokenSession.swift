@@ -22,6 +22,10 @@ final class RutokenTokenSession: TKTokenSession, TKTokenSessionDelegate {
             do {
                 try rutoken.login(pin: pin)
                 ExtensionLog.append("sign: logged in with PIN shared by the app")
+            } catch Pkcs11Error.pinIncorrect(let left) {
+                // Never retry a wrong PIN: the token locks after a few attempts.
+                SharedPin.clear()
+                ExtensionLog.append("sign: shared PIN is wrong, deleted; attempts left: \(left.map(String.init) ?? "?")")
             } catch {
                 ExtensionLog.append("sign: shared PIN login failed: \(error)")
             }

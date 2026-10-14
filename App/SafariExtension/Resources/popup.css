@@ -1,0 +1,10 @@
+:root { color-scheme: light dark; }
+body { font: 15px -apple-system, system-ui, sans-serif; margin: 16px; min-width: 260px; }
+h1 { font-size: 17px; margin: 0 0 8px; }
+#status { margin: 0 0 12px; }
+#status.ok { color: #1a7f37; }
+form { display: flex; gap: 8px; }
+input { flex: 1; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #8884; }
+button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 0; background: #d62d2d; color: #fff; }
+#forget { margin-top: 12px; background: transparent; color: #d62d2d; padding: 0; }
+.hint { color: #888; font-size: 12px; margin-top: 12px; }
