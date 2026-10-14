@@ -1,27 +1,48 @@
+// Popup of the toolbar button, also opened as a full page by background.js in place of a failed load.
 // The PIN goes to the app's native handler, which shares it with the token extension (CryptoTokenKit).
+const params = new URLSearchParams(location.search);
+const isPage = params.has('page');
+const returnURL = params.get('return');
+
 const status = document.getElementById('status');
 const form = document.getElementById('pin-form');
 const pinInput = document.getElementById('pin');
 const forget = document.getElementById('forget');
+const back = document.getElementById('back');
 
 const send = (message) => browser.runtime.sendNativeMessage('application.id', message);
 
+if (isPage) {
+  document.body.classList.add('page');
+  if (returnURL) {
+    document.getElementById('site').textContent = new URL(returnURL).host;
+    document.getElementById('intro').hidden = false;
+  }
+}
+
 function show(state) {
+  const failure = state.failure && state.failureAge < 600 ? state.failure : (isPage ? params.get('reason') : null);
   if (state.pinShared) {
     const until = new Date(state.expires * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    status.textContent = `PIN введён, действует до ${until}`;
-    status.className = 'ok';
+    status.textContent = failure && failure !== 'Нужен PIN' ? failure : `PIN введён, действует до ${until}`;
+    status.className = failure && failure !== 'Нужен PIN' ? 'warn' : 'ok';
     forget.hidden = false;
+    back.hidden = !returnURL;
   } else {
-    status.textContent = 'Введите PIN токена';
-    status.className = '';
+    status.textContent = failure && failure !== 'Нужен PIN' ? `${failure}. Введите PIN` : 'Введите PIN токена';
+    status.className = failure && failure !== 'Нужен PIN' ? 'warn' : '';
     forget.hidden = true;
+    back.hidden = true;
   }
 }
 
 async function refresh() {
   try { show(await send({ action: 'status' })); }
-  catch (e) { status.textContent = `Нет связи с приложением: ${e}`; }
+  catch (e) { status.textContent = `Нет связи с приложением «Рутокен»: ${e}`; }
+}
+
+function returnToSite() {
+  if (returnURL) location.replace(returnURL);
 }
 
 form.addEventListener('submit', async (event) => {
@@ -29,9 +50,17 @@ form.addEventListener('submit', async (event) => {
   const pin = pinInput.value;
   if (!pin) return;
   pinInput.value = '';
-  show(await send({ action: 'setPin', pin }));
+  const state = await send({ action: 'setPin', pin });
+  show(state);
+  browser.runtime.sendMessage({ type: 'pinChanged' }).catch(() => {});
+  if (isPage) returnToSite();
 });
 
-forget.addEventListener('click', async () => show(await send({ action: 'clearPin' })));
+forget.addEventListener('click', async () => {
+  show(await send({ action: 'clearPin' }));
+  browser.runtime.sendMessage({ type: 'pinChanged' }).catch(() => {});
+});
+back.addEventListener('click', returnToSite);
 
 refresh();
+pinInput.focus();

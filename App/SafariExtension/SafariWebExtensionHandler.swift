@@ -14,6 +14,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         case "setPin":
             if let pin = message["pin"] as? String, !pin.isEmpty {
                 SharedPin.store(pin)
+                SharedPin.clearFailure()
                 ExtensionLog.append("safari: PIN entered in Safari popup")
             }
         case "clearPin":
@@ -30,6 +31,11 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private func status() -> [String: Any] {
         let expiry = SharedPin.load() != nil ? SharedPin.expiry : nil
-        return ["pinShared": expiry != nil, "expires": expiry?.timeIntervalSince1970 ?? 0]
+        var status: [String: Any] = ["pinShared": expiry != nil, "expires": expiry?.timeIntervalSince1970 ?? 0]
+        if let failure = SharedPin.lastFailure {
+            status["failure"] = failure.text
+            status["failureAge"] = Date.now.timeIntervalSince(failure.date)
+        }
+        return status
     }
 }

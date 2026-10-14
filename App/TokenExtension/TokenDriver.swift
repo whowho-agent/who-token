@@ -70,6 +70,7 @@ final class RutokenToken: TKToken, TKTokenDelegate {
             return nil
         }
         guard let slot else {
+            SharedPin.recordFailure("Токен не подключён: вставьте USB-токен")
             ExtensionLog.append("token \(serial) not connected")
             throw TKError(.tokenNotFound)
         }

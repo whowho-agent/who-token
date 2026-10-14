@@ -25,11 +25,17 @@ final class RutokenTokenSession: TKTokenSession, TKTokenSessionDelegate {
             } catch Pkcs11Error.pinIncorrect(let left) {
                 // Never retry a wrong PIN: the token locks after a few attempts.
                 SharedPin.clear()
+                SharedPin.recordFailure("PIN не подошёл" + (left.map { ", осталось попыток: \($0)" } ?? ""))
                 ExtensionLog.append("sign: shared PIN is wrong, deleted; attempts left: \(left.map(String.init) ?? "?")")
+            } catch Pkcs11Error.pinLocked {
+                SharedPin.clear()
+                SharedPin.recordFailure("PIN заблокирован: разблокируйте токен PIN-кодом администратора")
+                ExtensionLog.append("sign: PIN locked")
             } catch {
                 ExtensionLog.append("sign: shared PIN login failed: \(error)")
             }
         } else {
+            SharedPin.recordFailure("Нужен PIN")
             ExtensionLog.append("sign: not logged in and no shared PIN")
         }
         do {

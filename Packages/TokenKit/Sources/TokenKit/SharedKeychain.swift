@@ -96,4 +96,24 @@ public enum SharedPin {
         SharedKeychain.delete(account: account)
         SharedKeychain.delete(account: expiryAccount)
     }
+
+    // MARK: Last problem, for hints in Safari
+
+    private static let failureAccount = "user-pin-failure"
+
+    /// The token extension records why it couldn't sign (wrong PIN, token not connected) so the Safari
+    /// extension can explain the failed page load to the user.
+    public static func recordFailure(_ text: String, now: Date = .now) {
+        SharedKeychain.set(Data("\(now.timeIntervalSince1970)|\(text)".utf8), account: failureAccount)
+    }
+
+    public static var lastFailure: (text: String, date: Date)? {
+        guard let raw = SharedKeychain.get(account: failureAccount).map({ String(decoding: $0, as: UTF8.self) }),
+              let bar = raw.firstIndex(of: "|"), let seconds = TimeInterval(raw[..<bar]) else { return nil }
+        return (String(raw[raw.index(after: bar)...]), Date(timeIntervalSince1970: seconds))
+    }
+
+    public static func clearFailure() {
+        SharedKeychain.delete(account: failureAccount)
+    }
 }

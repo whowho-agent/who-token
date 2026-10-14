@@ -102,6 +102,7 @@ final class SetupModel {
             try await service.login(slot: token.info.slot, pin: pin)
             await service.logout(slot: token.info.slot)
             SharedPin.store(pin)
+            SharedPin.clearFailure()
             show("PIN проверен и сохранён на 24 часа", isError: false)
         } catch {
             show("\(error)", isError: true)

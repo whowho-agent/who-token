@@ -87,6 +87,8 @@ targets:
         buildPhase: resources
       - path: App/SafariExtension/Resources/popup.js
         buildPhase: resources
+      - path: App/SafariExtension/Resources/background.js
+        buildPhase: resources
       - path: App/SafariExtension/Resources/images
         type: folder
         buildPhase: resources
