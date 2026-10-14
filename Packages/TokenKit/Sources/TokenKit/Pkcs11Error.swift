@@ -8,7 +8,6 @@ public enum Pkcs11Error: Error, Equatable, Sendable {
     case tokenNotPresent
     case keyNotFound
     case mechanismNotSupported
-    case nfcFailed(String)
     case function(String, rv: CK_RV)
 
     static func check(_ rv: CK_RV, _ function: String) throws {
@@ -33,7 +32,6 @@ extension Pkcs11Error: CustomStringConvertible {
         case .tokenNotPresent: "Токен отключён"
         case .keyNotFound: "Закрытый ключ для сертификата не найден"
         case .mechanismNotSupported: "Механизм подписи не поддерживается токеном"
-        case .nfcFailed(let reason): "Ошибка NFC: \(reason)"
         case .function(let name, let rv): "\(name) вернула 0x\(String(rv, radix: 16))"
         }
     }

@@ -1,4 +1,4 @@
-name: RutokenBrowser
+name: Rutoken
 options:
   deploymentTarget:
     iOS: "17.0"
@@ -12,76 +12,34 @@ settings:
 packages:
   TokenKit:
     path: Packages/TokenKit
-  ProxyKit:
-    path: Packages/ProxyKit
 targets:
-  RutokenBrowser:
+  Rutoken:
     type: application
     platform: iOS
     sources:
       - App/Sources
-      - path: App/Resources
-        optional: true
-        buildPhase: resources
-      - path: App/ClientChain
-        type: folder
-        buildPhase: resources
-      - path: App/TrustRoots
-        type: folder
-        buildPhase: resources
     dependencies:
       - package: TokenKit
         product: TokenKit
-      - package: ProxyKit
-        product: ProxyKit
       - target: RutokenTokenExtension
       - target: RutokenSafariExtension
     entitlements:
-      path: App/RutokenBrowser.app.entitlements
+      path: App/Rutoken.entitlements
       properties:
         keychain-access-groups:
           - $(AppIdentifierPrefix)$(RB_BUNDLE_ID).shared
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Рутокен Браузер
+        CFBundleDisplayName: Рутокен
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
-        NFCReaderUsageDescription: NFC используется для работы с картами Рутокен ЭЦП
-        # Intercepted hosts present the in-app proxy CA; ATS would re-check it against system roots
-        # for domain names. The proxy verifies the real servers itself.
-        NSAppTransportSecurity:
-          NSAllowsArbitraryLoadsInWebContent: true
-        NSLocalNetworkUsageDescription: Доступ к локальной сети нужен для тестового mTLS-стенда
-        NSBluetoothAlwaysUsageDescription: Bluetooth используется для работы с Рутокен ЭЦП Bluetooth
-        NSFaceIDUsageDescription: Face ID открывает сохранённый PIN токена, чтобы не вводить его заново в течение суток
         RBSharedKeychainGroup: $(AppIdentifierPrefix)$(RB_BUNDLE_ID).shared
-        com.apple.developer.nfc.readersession.iso7816.select-identifiers:
-          - F0000000005275746F6B656E
-          - A00000039742544659
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(RB_BUNDLE_ID)
-        # A free (personal) team cannot sign the NFC entitlement. With a paid team set:
-        # CODE_SIGN_ENTITLEMENTS: App/RutokenBrowser.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-    scheme:
-      testTargets: [RutokenBrowserTests]
-
-  # Unit tests for the app's pure logic (error page mapping). Not hosted: the sources are compiled
-  # into the bundle directly, so the tests need neither the app, WebKit nor a token.
-  RutokenBrowserTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - App/Tests
-      - App/Sources/Browser/BrowserError.swift
-      - App/Sources/Browser/IdentityStatus.swift
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: $(RB_BUNDLE_ID).Tests
-        GENERATE_INFOPLIST_FILE: YES
 
   RutokenTokenExtension:
     type: app-extension

@@ -144,7 +144,7 @@ public actor TokenService {
 
     // MARK: - Slot events
 
-    /// Emits whenever a token is inserted or removed (USB/BT plug, NFC card tap).
+    /// Emits whenever a token is inserted or removed (USB token plugged in or out).
     public nonisolated func slotEvents() -> AsyncStream<UInt> {
         AsyncStream { continuation in
             let thread = Thread {
@@ -161,7 +161,7 @@ public actor TokenService {
         }
     }
 
-    /// Waits until a token is present in any slot, e.g. right after an NFC card was tapped.
+    /// Waits until a token is present in any slot, e.g. right after it was plugged in.
     public func waitForToken(timeout: Duration = .seconds(5)) async throws -> UInt {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout

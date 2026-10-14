@@ -1,12 +1,21 @@
-# Рутокен Браузер
+# Рутокен для Safari
 
-iOS-браузер для сайтов, требующих TLS-аутентификации клиента (mTLS) сертификатом, закрытый ключ
-которого хранится на USB-токене Рутокен ЭЦП. Ключ не покидает токен: подпись выполняется на нём.
+Вход в обычном Safari на iPhone и iPad на сайты, требующие TLS-аутентификации клиента (mTLS)
+сертификатом, закрытый ключ которого хранится на USB-токене Рутокен ЭЦП. Ключ не покидает токен:
+подпись выполняется на нём.
 
-WebKit не умеет использовать ключи с токенов напрямую, поэтому приложение поднимает локальный прокси:
-трафик к сайтам из списка расшифровывается внутри приложения и отправляется на сервер по TLS с
-сертификатом с токена; остальные сайты идут туннелем без расшифровки. Подробности и результаты
-проверок — в [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Как это устроено:
+
+- **Драйвер токена** (`App/TokenExtension`, расширение CryptoTokenKit). Приложение регистрирует в системе
+  сертификаты с токена; когда сайт запрашивает сертификат, Safari сам вызывает драйвер, и тот подписывает
+  на токене через PKCS#11 (`rtpkcs11ecp`) и RtPcsc.
+- **Расширение Safari «Рутокен»** (`App/SafariExtension`). iOS не спрашивает PIN для токена сама, поэтому
+  PIN вводится кнопкой «Рутокен» в Safari (или в приложении) и передаётся драйверу через общий keychain
+  на 24 часа.
+- **Приложение «Рутокен»** — экран настройки: статус токена, подключение к Safari, PIN, инструкция.
+
+Подробности, история проверок и отказ от варианта со встроенным браузером — в
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Встроенный браузер с прокси сохранён в теге `browser-proxy`.
 
 ## Требования
 
@@ -23,35 +32,33 @@ cp Config/Local.xcconfig.example Config/Local.xcconfig
 В `Config/Local.xcconfig` укажите свой Team ID (Xcode → Settings → Accounts) и уникальный bundle id,
 например `com.example.RutokenBrowser.<TEAM_ID>`. Файл в git не попадает.
 
-Сертификаты организации (в git не попадают, см. README в каждой папке):
-
-- `App/ClientChain/*.pem` — промежуточные CA, выпустившие сертификат на токене (нужны серверам, которые
-  проверяют полную цепочку, например AD FS);
-- `App/TrustRoots/*.pem` — корневые CA организации, если серверные сертификаты внутренних сайтов
-  выпущены ими.
-
 ```bash
 xcodegen generate
-open RutokenBrowser.xcodeproj
+open Rutoken.xcodeproj
 ```
 
 При первой сборке Xcode попросит доверить плагину SwiftLint из пакета RtPcsc — «Trust & Enable».
 Из командной строки (с подключённым iPhone):
 
 ```bash
-xcodebuild -project RutokenBrowser.xcodeproj -scheme RutokenBrowser -destination 'platform=iOS,name=<имя iPhone>' -derivedDataPath .build/DerivedData -skipPackagePluginValidation -allowProvisioningUpdates build
+xcodebuild -project Rutoken.xcodeproj -scheme Rutoken -destination 'platform=iOS,name=<имя iPhone>' -derivedDataPath .build/DerivedData -skipPackagePluginValidation -allowProvisioningUpdates build
 ```
 
 После установки с бесплатной учётной записью подтвердите разработчика на телефоне:
 Настройки → Основные → VPN и управление устройством.
 
-## Использование
+## Настройка на устройстве
 
-1. Подключите токен к телефону и откройте приложение.
-2. В настройках браузера добавьте сайты с входом по токену: хосты через запятую, можно `*.домен`.
-3. Откройте сайт. PIN спрашивается, только когда сервер запросил сертификат.
+1. Подключите токен, откройте «Рутокен» и нажмите «Подключить токен к Safari».
+2. Настройки → Приложения → Safari → Расширения → «Рутокен»: включите и разрешите на нужных сайтах.
+3. Если сайты организации используют собственный корневой сертификат, установите его профилем
+   (`.mobileconfig` от ИТ или MDM) и включите полное доверие: Настройки → Основные → Об этом устройстве →
+   Доверие сертификатам.
+4. Введите PIN кнопкой «Рутокен» в Safari (значок «аА» в адресной строке) или в приложении.
+   Если Safari пишет, что не может установить безопасное соединение, — введите PIN и обновите страницу.
 
-Вкладка «Токен» — диагностика: ридеры, сертификаты, тестовая подпись, mTLS-запрос.
+PIN хранится на устройстве 24 часа и защищён только код-паролем устройства: расширения не могут
+показать Face ID. Неверный PIN удаляется сразу, чтобы не тратить попытки токена.
 
 ## Раздача команде
 
@@ -60,25 +67,22 @@ xcodebuild -project RutokenBrowser.xcodeproj -scheme RutokenBrowser -destination
   проект сам со своим Apple ID (шаги выше) либо переподписывает `.ipa` своим Apple ID (Sideloadly,
   AltStore), тоже на 7 дней.
 - **С платной учётной записью** (Apple Developer Program): ad hoc (до 100 устройств по UDID) или
-  TestFlight; для корпоративного распространения — MDM.
+  TestFlight; для корпоративного распространения — MDM (заодно раздаёт корневой сертификат).
 
 Перед распространением проверьте лицензионные условия Рутокен SDK на встраивание `rtpkcs11ecp` и `RtPcsc`.
 
 ## Тестовый стенд
 
-HTTPS-сервер на Mac, пускающий только клиентов с сертификатом от заданных CA:
+HTTPS-сервер на Mac (`openssl s_server`), пускающий только клиентов с сертификатом от заданных CA:
 
 1. Положите CA сертификата с токена в `stand/ca/*.pem`.
 2. `stand/run-stand.sh` — выведет адрес `https://<IP Mac>:8443/`.
-3. В приложении добавьте IP Mac в сайты с входом по токену и откройте адрес.
-
-Сервер логирует каждое TLS-рукопожатие — по нему видно, сколько подписей на токене стоила загрузка.
+3. Установите `stand/pki/stand-ca.pem` на iPhone профилем с полным доверием и откройте адрес в Safari.
 
 ## Тесты и утилиты
 
 ```bash
 cd Packages/TokenKit && swift test
-cd Packages/ProxyKit && swift test
 ```
 
 С токеном, вставленным в Mac:
@@ -87,18 +91,13 @@ cd Packages/ProxyKit && swift test
 cd Packages/TokenKit && swift run tokenctl list
 ```
 
-```bash
-cd Packages/ProxyKit && swift run mtlsctl https://<host>/ --ca <доп. корень.pem>
-```
-
 ## Структура
 
 | Путь | Что это |
 |---|---|
-| `Packages/TokenKit` | PKCS#11 (`rtpkcs11ecp`) и RtPcsc: сертификаты, вход по PIN, подпись RSA PKCS#1/PSS, ридеры; `tokenctl` |
-| `Packages/ProxyKit` | локальный прокси для WKWebView, MITM-CA в памяти, mTLS через SwiftNIO SSL с ключом на токене; `mtlsctl`, `standserver` |
-| `App/Sources/Browser` | браузер: WKWebView через прокси, PIN, настройки |
-| `App/Sources/TokenLab` | вкладка диагностики токена |
-| `App/TokenExtension`, `App/Sources/SystemToken` | эксперимент с CryptoTokenKit (отложен: нужна платная команда) |
+| `Packages/TokenKit` | PKCS#11 (`rtpkcs11ecp`) и RtPcsc: сертификаты, вход по PIN, подпись RSA PKCS#1/PSS (сообщение и хеш), ридеры, общий keychain; `tokenctl` |
+| `App/Sources` | приложение: экран настройки, регистрация токена в системе |
+| `App/TokenExtension` | драйвер токена CryptoTokenKit |
+| `App/SafariExtension` | расширение Safari: ввод PIN |
 | `stand/` | тестовый стенд |
 | `docs/ARCHITECTURE.md` | архитектура, план, результаты |

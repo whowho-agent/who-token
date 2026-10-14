@@ -5,9 +5,8 @@
 #   stand/run-stand.sh [port]          default port 8443
 #
 # The server certificate is issued by a local "Test Stand CA" (stand/pki/, not committed).
-# Its public cert is copied to App/Resources/stand-ca.pem, so the app trusts the stand.
-# Server: standserver (Packages/ProxyKit), HTTP/1.1 keep-alive, files from stand/www, /whoami shows
-# the verified client certificate. Every TLS handshake (= one token signature) is logged.
+# To open the stand in Safari, install stand/pki/stand-ca.pem on the iPhone as a profile and enable full
+# trust for it. The page (openssl s_server -www) shows the TLS session and the verified client certificate.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -31,8 +30,6 @@ fi
 "$OPENSSL" x509 -req -in $PKI/server.csr -CA $PKI/stand-ca.pem -CAkey $PKI/stand-ca.key -CAcreateserial \
   -days 30 -out $PKI/server.pem \
   -extfile <(printf "subjectAltName=DNS:%s,DNS:localhost,IP:%s,IP:127.0.0.1\nextendedKeyUsage=serverAuth\nkeyUsage=critical,digitalSignature" "$HOST" "$IP") 2>/dev/null
-# The app trusts the stand through this bundled copy of the CA certificate.
-mkdir -p ../App/Resources && cp $PKI/stand-ca.pem ../App/Resources/stand-ca.pem
 shopt -s nullglob
 CLIENT_CAS=(ca/*.pem)
 if (( ${#CLIENT_CAS[@]} == 0 )); then
@@ -43,6 +40,7 @@ cat "${CLIENT_CAS[@]}" > $PKI/client-ca-chain.pem
 
 echo "mTLS stand: https://$IP:$PORT/  (https://$HOST:$PORT/)"
 echo "Client CAs: ${CLIENT_CAS[*]}"
-swift build --package-path ../Packages/ProxyKit --product standserver -q
-exec "$(swift build --package-path ../Packages/ProxyKit --show-bin-path)/standserver" --port "$PORT" \
-  --cert $PKI/server.pem --key $PKI/server.key --client-ca $PKI/client-ca-chain.pem --root www
+exec "$OPENSSL" s_server -accept "$PORT" \
+  -cert $PKI/server.pem -key $PKI/server.key \
+  -CAfile $PKI/client-ca-chain.pem -Verify 2 -verify_return_error \
+  -www

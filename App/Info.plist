@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Рутокен Браузер</string>
+	<string>Рутокен</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -22,19 +22,6 @@
 	<string>1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>NFCReaderUsageDescription</key>
-	<string>NFC используется для работы с картами Рутокен ЭЦП</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoadsInWebContent</key>
-		<true/>
-	</dict>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Bluetooth используется для работы с Рутокен ЭЦП Bluetooth</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Face ID открывает сохранённый PIN токена, чтобы не вводить его заново в течение суток</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Доступ к локальной сети нужен для тестового mTLS-стенда</string>
 	<key>RBSharedKeychainGroup</key>
 	<string>$(AppIdentifierPrefix)$(RB_BUNDLE_ID).shared</string>
 	<key>UILaunchScreen</key>
@@ -42,11 +29,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-	</array>
-	<key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
-	<array>
-		<string>F0000000005275746F6B656E</string>
-		<string>A00000039742544659</string>
 	</array>
 </dict>
 </plist>
