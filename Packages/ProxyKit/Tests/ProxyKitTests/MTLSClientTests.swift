@@ -49,13 +49,14 @@ private final class EchoClientCertHandler: ChannelInboundHandler, @unchecked Sen
     }
 }
 
-func startServer(requireClientCertificate: Bool = true) async throws -> Channel {
+func startServer(requireClientCertificate: Bool = true, maximumTLSVersion: TLSVersion? = nil) async throws -> Channel {
     var configuration = TLSConfiguration.makeServerConfiguration(
         certificateChain: try NIOSSLCertificate.fromPEMBytes(Array(fixture("server", "pem"))).map { .certificate($0) },
         privateKey: .privateKey(try NIOSSLPrivateKey(bytes: Array(fixture("server-key", "pem")), format: .pem))
     )
     configuration.certificateVerification = requireClientCertificate ? .noHostnameVerification : .none
     configuration.trustRoots = .certificates(try NIOSSLCertificate.fromPEMBytes(Array(fixture("client-ca", "pem"))))
+    configuration.maximumTLSVersion = maximumTLSVersion
     let context = try NIOSSLContext(configuration: configuration)
 
     return try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)

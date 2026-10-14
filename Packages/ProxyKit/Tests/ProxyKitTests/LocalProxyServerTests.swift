@@ -8,7 +8,7 @@ import Testing
 import TokenKit
 @testable import ProxyKit
 
-private struct SoftwareIdentityProvider: ClientIdentityProvider {
+struct SoftwareIdentityProvider: ClientIdentityProvider {
     let recorder: SignRecorder
 
     func identity(for host: String) async throws -> ClientIdentity? {

@@ -43,20 +43,23 @@ public enum MTLSClient {
         certificate: TokenCertificate,
         privateKey: TokenPrivateKey,
         extraTrustRootsPEM: [Data] = [],
-        version: TLSVersionChoice = .automatic
+        version: TLSVersionChoice = .automatic,
+        sessionCache: UpstreamSessionCache? = nil
     ) async throws -> MTLSResponse {
         guard url.scheme == "https", let host = url.host() else { throw MTLSClientError.invalidURL }
         let port = url.port ?? 443
         let path = url.path().isEmpty ? "/" : url.path() + (url.query().map { "?\($0)" } ?? "")
 
+        let identity = ClientIdentity(certificate: certificate, privateKey: privateKey)
         let context = try UpstreamTLS.context(
-            identity: ClientIdentity(certificate: certificate, privateKey: privateKey),
+            identity: identity,
             extraTrustRootsPEM: extraTrustRootsPEM,
             version: version
         )
         let serverHostname = UpstreamTLS.serverHostname(host)
 
         let start = ContinuousClock.now
+        let lease = await sessionCache?.checkout(.init(host: host, port: port, identity: identity))
         let collector = ResponseCollector()
         let channel: Channel
         do {
@@ -64,14 +67,17 @@ public enum MTLSClient {
                 .connectTimeout(.seconds(15))
                 .channelInitializer { channel in
                     channel.eventLoop.makeCompletedFuture {
-                        let tls = try NIOSSLClientHandler(context: context, serverHostname: serverHostname)
-                        try channel.pipeline.syncOperations.addHandler(tls)
+                        try UpstreamTLS.addClientHandlers(
+                            to: channel.pipeline.syncOperations, context: context,
+                            serverHostname: serverHostname, lease: lease
+                        )
                         try channel.pipeline.syncOperations.addHandler(collector)
                     }
                 }
                 .connect(host: host, port: port)
                 .get()
         } catch {
+            lease?.finish()
             throw MTLSClientError.connectFailed(host: host, port: port, reason: String(describing: error))
         }
 
