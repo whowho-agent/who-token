@@ -110,7 +110,8 @@ private struct WebView: UIViewRepresentable {
         // WKWebView's default user agent lacks "Version/… Safari/…", so sites sniffing for Safari
         // (e.g. apps choosing a modern or legacy JS bundle by user agent) serve a degraded or broken page.
         configuration.applicationNameForUserAgent = safariApplicationName()
-        // Diagnostics: forward JS errors and console warnings/errors to the app log.
+        #if DEBUG
+        // Diagnostics (Debug builds only): forward JS errors and console warnings/errors to the app log.
         configuration.userContentController.add(context.coordinator, name: "diag")
         configuration.userContentController.addUserScript(WKUserScript(source: """
             (function() {
@@ -124,6 +125,7 @@ private struct WebView: UIViewRepresentable {
               window.open = function() { send('window.open', arguments); return origOpen.apply(window, arguments); };
             })();
             """, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        #endif
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
