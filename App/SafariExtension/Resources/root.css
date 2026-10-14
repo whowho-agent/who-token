@@ -1,0 +1,9 @@
+dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 16px 0; }
+dt { color: #888; }
+dd { margin: 0; word-break: break-word; }
+h2 { font-size: 16px; margin: 16px 0 8px; }
+pre#fingerprint { font: 16px ui-monospace, Menlo, monospace; line-height: 1.6; background: #8881; padding: 12px; border-radius: 8px; white-space: pre-wrap; }
+.warn-box { border-left: 3px solid #c62828; padding-left: 10px; }
+#anchors.ok { color: #1a7f37; }
+#anchors.bad { color: #c62828; font-weight: 600; }
+#download { margin-top: 8px; width: 100%; }

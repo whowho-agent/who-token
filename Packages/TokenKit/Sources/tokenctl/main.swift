@@ -1,5 +1,6 @@
 // tokenctl: checks TokenKit against a real USB Rutoken on macOS.
 //   tokenctl list                       tokens, certificates, signature algorithms (no PIN needed)
+//   tokenctl root <site>                root CA of a site as a .mobileconfig (compare the SHA-256!)
 //   tokenctl sign [algorithm]           PIN prompt, signs a test message with each usable certificate
 //                                       and verifies it with the certificate's public key
 import CryptoKit
@@ -12,6 +13,25 @@ let arguments = CommandLine.arguments.dropFirst()
 let command = arguments.first ?? "list"
 let formatter = ISO8601DateFormatter()
 formatter.formatOptions = [.withFullDate]
+
+if command == "root", let site = arguments.dropFirst().first {
+    // tokenctl root <site>: find the root CA anchoring the site and write <name>.mobileconfig
+    do {
+        let root = try await RootCertificateFinder.find(siteAddress: site)
+        print("Цепочка сервера: \(root.serverChain.joined(separator: " → "))")
+        print("Корень: \(root.name), до \(formatter.string(from: root.notValidAfter))")
+        if let url = root.downloadedFrom { print("Скачан: \(url.absoluteString)") }
+        print("SHA-256: \(root.sha256Fingerprint)")
+        print("Подтверждает сайт: \(root.anchorsHost ? "да" : "НЕТ")")
+        let file = "\(root.name).mobileconfig"
+        try root.mobileConfig().write(to: URL(fileURLWithPath: file))
+        print("Профиль: \(file)")
+    } catch {
+        print("Ошибка: \(error)")
+        exit(1)
+    }
+    exit(0)
+}
 
 do {
     let service = try TokenService()

@@ -37,6 +37,14 @@ targets:
         CFBundleDisplayName: Рутокен
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # rutoken://root?site=… — the Safari extension opens the root certificate screen.
+        CFBundleURLTypes:
+          - CFBundleURLName: rutoken
+            CFBundleURLSchemes: [rutoken]
+        # Issuer certificates (AIA "CA Issuers") are published over plain http; the downloaded root is
+        # checked against the site's chain and by the fingerprint the user compares.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
@@ -97,6 +105,12 @@ targets:
         buildPhase: resources
       - path: App/SafariExtension/Resources/pin.html
         buildPhase: resources
+      - path: App/SafariExtension/Resources/root.html
+        buildPhase: resources
+      - path: App/SafariExtension/Resources/root.js
+        buildPhase: resources
+      - path: App/SafariExtension/Resources/root.css
+        buildPhase: resources
       - path: App/SafariExtension/Resources/images
         type: folder
         buildPhase: resources
@@ -119,6 +133,8 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         RBSharedKeychainGroup: $(AppIdentifierPrefix)$(RB_BUNDLE_ID).shared
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.Safari.web-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler

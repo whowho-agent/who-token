@@ -9,6 +9,6 @@ body.page h1 { font-size: 22px; }
 form { display: flex; gap: 8px; }
 input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #8884; }
 button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 0; background: #d62d2d; color: #fff; }
-#forget, #back { margin-top: 12px; background: transparent; color: #d62d2d; padding: 0; }
+#forget, #back, .link { margin-top: 12px; background: transparent; color: #d62d2d; padding: 0; display: block; }
 .hint { color: #888; font-size: 12px; margin-top: 16px; }
 body.page .hint { font-size: 14px; }

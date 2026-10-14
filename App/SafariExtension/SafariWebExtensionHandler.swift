@@ -10,6 +10,33 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let request = context.inputItems.first as? NSExtensionItem
         let message = request?.userInfo?[SFExtensionMessageKey] as? [String: Any] ?? [:]
 
+        if message["action"] as? String == "findRoot" {
+            let site = message["site"] as? String ?? ""
+            // The request completes asynchronously; the context is only used once, from this task.
+            nonisolated(unsafe) let context = context
+            Task {
+                let reply: [String: Any]
+                do {
+                    let root = try await RootCertificateFinder.find(siteAddress: site)
+                    reply = [
+                        "name": root.name,
+                        "fingerprint": root.sha256Fingerprint,
+                        "notAfter": root.notValidAfter.timeIntervalSince1970,
+                        "anchors": root.anchorsHost,
+                        "chain": root.serverChain,
+                        "downloadedFrom": root.downloadedFrom?.absoluteString ?? "",
+                        "profile": root.mobileConfig().base64EncodedString()
+                    ]
+                } catch {
+                    reply = ["error": "\(error)"]
+                }
+                let response = NSExtensionItem()
+                response.userInfo = [SFExtensionMessageKey: reply]
+                context.completeRequest(returningItems: [response], completionHandler: nil)
+            }
+            return
+        }
+
         switch message["action"] as? String {
         case "setPin":
             if let pin = message["pin"] as? String, !pin.isEmpty {

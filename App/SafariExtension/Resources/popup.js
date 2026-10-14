@@ -62,5 +62,17 @@ forget.addEventListener('click', async () => {
 });
 back.addEventListener('click', returnToSite);
 
+// Root certificate of the current site (or of the site that failed, on the PIN page).
+document.getElementById('root').addEventListener('click', async () => {
+  let site = returnURL;
+  if (!site) {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    site = tab?.url;
+  }
+  const host = site && site.startsWith('https://') ? new URL(site).host : '';
+  await browser.tabs.create({ url: browser.runtime.getURL(`root.html?site=${encodeURIComponent(host)}`) });
+  window.close();
+});
+
 refresh();
 pinInput.focus();

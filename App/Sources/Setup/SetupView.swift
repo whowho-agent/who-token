@@ -5,6 +5,9 @@ struct SetupView: View {
     @State var model: SetupModel
     @State private var pin = ""
     @FocusState private var pinFocused: Bool
+    /// Site whose root certificate to look up, set by the toolbar link or a `rutoken://root?site=` URL
+    /// from the Safari extension.
+    @State private var rootSite: RootSite?
 
     var body: some View {
         NavigationStack {
@@ -18,6 +21,7 @@ struct SetupView: View {
                 tokenSection
                 safariSection
                 pinSection
+                rootSection
                 instructionsSection
                 #if DEBUG
                 diagnosticsSection
@@ -27,6 +31,28 @@ struct SetupView: View {
             .refreshable { await model.refresh() }
             .overlay { if model.isBusy { ProgressView().controlSize(.large) } }
             .task { await model.start() }
+            .navigationDestination(item: $rootSite) { site in
+                RootCertificateView(model: RootCertificateModel(address: site.address))
+            }
+            .onOpenURL { url in
+                // rutoken://root?site=wiki.example.com — opened by the Safari extension.
+                guard url.scheme == "rutoken", url.host() == "root" else { return }
+                let site = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first { $0.name == "site" }?.value ?? ""
+                rootSite = RootSite(address: site)
+            }
+        }
+    }
+
+    private var rootSection: some View {
+        Section {
+            Button("Установить корневой сертификат сайта…", systemImage: "checkmark.shield") {
+                rootSite = RootSite(address: "")
+            }
+        } header: {
+            Text("Сертификат сервера")
+        } footer: {
+            Text("Если Safari пишет, что соединение с внутренним сайтом не является частным: найдём корневой сертификат сайта и поможем установить его профилем. Перед установкой сверьте отпечаток с ИТ.")
         }
     }
 
@@ -102,7 +128,7 @@ struct SetupView: View {
         Section("Первая настройка") {
             Step(number: 1, text: "Подключите токен и нажмите «Подключить токен к Safari».")
             Step(number: 2, text: "Настройки → Приложения → Safari → Расширения → «Рутокен»: включите и разрешите на нужных сайтах.")
-            Step(number: 3, text: "Если сайты организации используют собственный корневой сертификат, установите его профилем и включите в Настройки → Основные → Об этом устройстве → Доверие сертификатам.")
+            Step(number: 3, text: "Если сайты организации используют собственный корневой сертификат: «Установить корневой сертификат сайта…», сверьте отпечаток, установите профиль и включите его в Настройки → Основные → Об этом устройстве → Доверие сертификатам.")
             Step(number: 4, text: "Введите PIN здесь или в расширении «Рутокен» и откройте сайт в Safari. Если Safari пишет, что не может установить безопасное соединение, — введите PIN и обновите страницу.")
         }
     }
@@ -140,4 +166,9 @@ private struct Step: View {
             Text(text)
         }
     }
+}
+
+struct RootSite: Identifiable, Hashable {
+    let id = UUID()
+    let address: String
 }
