@@ -31,6 +31,9 @@ final class BrowserModel {
     var loadRequest: URL?
 
     private(set) var proxy: LocalProxyServer?
+    private(set) var identityProvider: TokenIdentityProvider?
+    /// Latest token-related problem per host, for error pages.
+    private(set) var identityIssues: [String: IdentityStatus] = [:]
     private let interceptHosts: OSAllocatedUnfairLock<Set<String>>
     private let service: TokenService?
     private let prompter: PinPrompter
@@ -44,10 +47,14 @@ final class BrowserModel {
     func start() async {
         guard proxy == nil, let service else { return }
         let hosts = interceptHosts
+        let identityProvider = TokenIdentityProvider(service: service, prompter: prompter) { [weak self] status in
+            Task { @MainActor in self?.record(status) }
+        }
+        self.identityProvider = identityProvider
         do {
             let proxy = try await LocalProxyServer.start(.init(
                 shouldIntercept: { host in hosts.withLock { Self.matches(host, $0) } },
-                identityProvider: TokenIdentityProvider(service: service, prompter: prompter),
+                identityProvider: identityProvider,
                 extraTrustRootsPEM: Self.standCA + Self.bundledTrustRoots,
                 onEvent: { [weak self] event in
                     Task { @MainActor in self?.record(event) }
@@ -94,6 +101,17 @@ final class BrowserModel {
         events.insert("\(Date().formatted(.dateTime.hour().minute().second())) \(text)", at: 0)
         if events.count > 200 { events.removeLast() }
         AppLog.write("[browser] \(text)")
+    }
+
+    private func record(_ status: IdentityStatus) {
+        switch status {
+        case .tokenMissing(let host), .noCertificate(let host), .pinCancelled(let host):
+            identityIssues[host] = status
+        case .loginFailed(let host, _):
+            identityIssues[host] = status
+        case .signedIn:
+            identityIssues.removeAll()
+        }
     }
 
     private func record(_ event: ProxyEvent) {

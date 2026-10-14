@@ -7,11 +7,20 @@ import TokenKit
 actor TokenIdentityProvider: ClientIdentityProvider {
     private let service: TokenService
     private let prompter: PinPrompter
+    private let onStatus: @Sendable (IdentityStatus) -> Void
     private var login: Task<Void, Error>?
 
-    init(service: TokenService, prompter: PinPrompter) {
+    init(service: TokenService, prompter: PinPrompter, onStatus: @escaping @Sendable (IdentityStatus) -> Void = { _ in }) {
         self.service = service
         self.prompter = prompter
+        self.onStatus = onStatus
+    }
+
+    /// Logs out of the token and forgets any stored PIN ("Сбросить вход на токен" in settings).
+    func forgetLogin() async {
+        for token in (try? await service.tokens()) ?? [] {
+            await service.logout(slot: token.slot)
+        }
     }
 
     func identity(for host: String) async throws -> ClientIdentity? {
@@ -22,11 +31,13 @@ actor TokenIdentityProvider: ClientIdentityProvider {
         }
         guard let token else {
             AppLog.write("[identity] \(host): токен не подключён, соединение без сертификата")
+            onStatus(.tokenMissing(host: host))
             return nil
         }
         let certificates = TokenCertificate.usableForClientAuth(try await service.certificates(slot: token.slot))
         guard let certificate = certificates.first else {
             AppLog.write("[identity] \(host): нет годных сертификатов")
+            onStatus(.noCertificate(host: host))
             return nil
         }
         // No PIN yet: the certificate is public. The PIN is asked only if the server actually
