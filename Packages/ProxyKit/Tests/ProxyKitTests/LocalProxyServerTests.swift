@@ -150,3 +150,27 @@ final class EventRecorder: @unchecked Sendable {
         #expect(ProxyFrontHandler.hostPort("[::1]:9000", defaultPort: 443)! == ("::1", 9000))
     }
 }
+
+@Suite struct UpstreamErrorReportingTests {
+    @Test func upstreamTLSFailureIsReported() async throws {
+        let server = try await startServer()
+        defer { server.close(promise: nil) }
+        let serverPort = try #require(server.localAddress?.port)
+
+        let events = EventRecorder()
+        // No extra trust roots: the proxy can't verify the test server, as with an untrusted real server.
+        let proxy = try await LocalProxyServer.start(.init(
+            shouldIntercept: { $0 == "127.0.0.1" },
+            identityProvider: SoftwareIdentityProvider(recorder: SignRecorder()),
+            onEvent: events.record
+        ))
+        defer { Task { await proxy.stop() } }
+
+        _ = try? await ProxyClient.get(
+            host: "127.0.0.1", port: serverPort, proxyPort: proxy.port, trustRootsDER: [proxy.authority.caCertificateDER]
+        )
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(events.events.contains { if case .failed(_, _, let error) = $0 { error.contains("handshake") || error.contains("CERTIFICATE") } else { false } })
+    }
+}

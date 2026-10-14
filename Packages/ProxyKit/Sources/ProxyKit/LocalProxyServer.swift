@@ -185,6 +185,15 @@ final class ProxyFrontHandler: ChannelInboundHandler, RemovableChannelHandler, @
                                 serverHostname: serverHostname, lease: lease
                             )
                         }
+                        if upstreamContext != nil {
+                            // The CONNECT was already answered with 200, so a TLS failure (server rejected the
+                            // token certificate, untrusted server) would otherwise look like "connection lost".
+                            try channel.pipeline.syncOperations.addHandler(
+                                UpstreamErrorReporter { error in
+                                    configuration.onEvent(.failed(host: host, port: port, error: String(describing: error)))
+                                }
+                            )
+                        }
                         try channel.pipeline.syncOperations.addHandler(upstreamGlue)
                     }
                 }
@@ -287,5 +296,25 @@ final class ProxyFrontHandler: ChannelInboundHandler, RemovableChannelHandler, @
         let pieces = authority.split(separator: ":", omittingEmptySubsequences: false)
         guard let host = pieces.first, !host.isEmpty else { return nil }
         return (String(host), pieces.count > 1 ? Int(pieces[1]) ?? defaultPort : defaultPort)
+    }
+}
+
+/// Reports errors on the upstream (server) side of an intercepted connection, then passes them on.
+final class UpstreamErrorReporter: ChannelInboundHandler, Sendable {
+    typealias InboundIn = NIOAny
+    private let report: @Sendable (Error) -> Void
+
+    init(report: @escaping @Sendable (Error) -> Void) {
+        self.report = report
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        // A server closing without close_notify after its response is routine, not a failure.
+        if case NIOSSLError.uncleanShutdown = error {
+            context.fireErrorCaught(error)
+            return
+        }
+        report(error)
+        context.fireErrorCaught(error)
     }
 }

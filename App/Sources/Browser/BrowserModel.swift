@@ -157,6 +157,8 @@ final class BrowserModel {
     /// Logs out of the token; the next site that asks for the certificate prompts for the PIN again.
     func forgetTokenLogin() async {
         await identityProvider?.forgetLogin()
+        // Resumed TLS sessions would keep sites signed in without the token.
+        proxy?.sessionCache?.removeAll()
         log("вход на токен сброшен")
     }
 
