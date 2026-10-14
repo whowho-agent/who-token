@@ -43,12 +43,19 @@ struct StoredPin: Sendable {
         delete()
         var item = baseQuery()
         item[kSecAttrAccount] = serial
-        item[kSecAttrGeneric] = Data(String(now.addingTimeInterval(Self.lifetime).timeIntervalSince1970).utf8)
         item[kSecAttrAccessControl] = access
         item[kSecValueData] = Data(pin.utf8)
         let status = SecItemAdd(item as CFDictionary, nil)
         guard status == errSecSuccess else { throw StoredPinError.keychain(Self.describe(status)) }
+        UserDefaults.standard.set(now.addingTimeInterval(Self.lifetime), forKey: Self.expiryKey)
+        UserDefaults.standard.set(serial, forKey: Self.serialKey)
     }
+
+    // The expiry is kept outside the keychain item: iOS refuses even attribute-only queries on a
+    // biometry-protected item without authentication, so checking it there would always prompt or fail.
+    // It is not secret; the PIN itself stays in the keychain behind Face ID.
+    private static let expiryKey = "storedPin.expiry"
+    private static let serialKey = "storedPin.serial"
 
     /// Returns the PIN for `serial` after a Face ID prompt with `reason`. Expired entries are deleted
     /// without prompting.
@@ -97,26 +104,17 @@ struct StoredPin: Sendable {
         }
     }
 
-    /// Expiry of the entry for `serial`, read from attributes only (no Face ID prompt).
+    /// Expiry of the entry for `serial` (no Face ID prompt).
     func expiry(serial: String) -> Date? {
-        let context = LAContext()
-        context.interactionNotAllowed = true
-        var query = baseQuery()
-        query[kSecAttrAccount] = serial
-        query[kSecReturnAttributes] = true
-        query[kSecMatchLimit] = kSecMatchLimitOne
-        query[kSecUseAuthenticationContext] = context
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let attributes = result as? [CFString: Any],
-              let generic = attributes[kSecAttrGeneric] as? Data,
-              let seconds = TimeInterval(String(decoding: generic, as: UTF8.self)) else { return nil }
-        return Date(timeIntervalSince1970: seconds)
+        guard UserDefaults.standard.string(forKey: Self.serialKey) == serial else { return nil }
+        return UserDefaults.standard.object(forKey: Self.expiryKey) as? Date
     }
 
     /// Removes the stored PIN of any token.
     func delete() {
         SecItemDelete(baseQuery() as CFDictionary)
+        UserDefaults.standard.removeObject(forKey: Self.expiryKey)
+        UserDefaults.standard.removeObject(forKey: Self.serialKey)
     }
 
     private func baseQuery() -> [CFString: Any] {

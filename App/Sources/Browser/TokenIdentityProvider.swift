@@ -124,7 +124,7 @@ actor TokenIdentityProvider: ClientIdentityProvider {
         case .unavailable(let reason):
             AppLog.write("[identity] сохранённый PIN недоступен (\(reason)), спрашиваем PIN")
         case .none:
-            break
+            AppLog.write("[identity] сохранённого PIN нет или срок истёк, спрашиваем PIN")
         }
         try await promptAndLogin(token, retriesLeft: retriesLeft)
     }

@@ -2,6 +2,7 @@ import Foundation
 import NIOCore
 import NIOPosix
 import NIOSSL
+import NIOTLS
 
 public enum ProxyEvent: Sendable {
     /// Passthrough: bytes are relayed without decryption.
@@ -9,6 +10,9 @@ public enum ProxyEvent: Sendable {
     /// MITM with client authentication by the token.
     case intercept(host: String, port: Int, withClientCertificate: Bool)
     case failed(host: String, port: Int, error: String)
+    /// Upstream TLS handshake done: whether a cached session was offered and the server resumed it
+    /// (a resumed handshake costs no token signature).
+    case upstreamHandshake(host: String, port: Int, tlsVersion: String, offeredSession: Bool, resumed: Bool, cachedSessions: Int)
 }
 
 /// HTTP CONNECT proxy on 127.0.0.1 for WKWebView (`WKWebsiteDataStore.proxyConfigurations`).
@@ -186,6 +190,16 @@ final class ProxyFrontHandler: ChannelInboundHandler, RemovableChannelHandler, @
                             )
                         }
                         if upstreamContext != nil {
+                            let offered = lease?.session != nil
+                            let cache = configuration.sessionCache
+                            try channel.pipeline.syncOperations.addHandler(
+                                UpstreamHandshakeReporter { version, resumed in
+                                    configuration.onEvent(.upstreamHandshake(
+                                        host: host, port: port, tlsVersion: version,
+                                        offeredSession: offered, resumed: resumed, cachedSessions: cache?.count ?? 0
+                                    ))
+                                }
+                            )
                             // The CONNECT was already answered with 200, so a TLS failure (server rejected the
                             // token certificate, untrusted server) would otherwise look like "connection lost".
                             try channel.pipeline.syncOperations.addHandler(
@@ -316,5 +330,23 @@ final class UpstreamErrorReporter: ChannelInboundHandler, Sendable {
         }
         report(error)
         context.fireErrorCaught(error)
+    }
+}
+
+/// Reports how the upstream TLS handshake went (version, session resumption).
+final class UpstreamHandshakeReporter: ChannelInboundHandler, Sendable {
+    typealias InboundIn = NIOAny
+    private let report: @Sendable (String, Bool) -> Void
+
+    init(report: @escaping @Sendable (String, Bool) -> Void) {
+        self.report = report
+    }
+
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if case TLSUserEvent.handshakeCompleted = event,
+           let tls = try? context.pipeline.syncOperations.handler(type: NIOSSLClientHandler.self) {
+            report(tls.tlsVersion.map { "\($0)" } ?? "?", tls.isSessionReused)
+        }
+        context.fireUserInboundEventTriggered(event)
     }
 }

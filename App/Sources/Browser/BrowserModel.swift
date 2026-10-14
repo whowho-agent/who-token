@@ -176,8 +176,14 @@ final class BrowserModel {
         case .tunnel(let host, let port): log("туннель \(host):\(port)")
         case .intercept(let host, let port, let withCertificate):
             log("перехват \(host):\(port), клиентский сертификат: \(withCertificate ? "токен" : "нет")")
+        case .upstreamHandshake(let host, let port, let version, let offered, let resumed, let cached):
+            log("TLS к \(host):\(port): \(version), сессия \(resumed ? "возобновлена (без подписи)" : offered ? "предложена, сервер отказал" : "новая"), в кеше \(cached)")
         case .failed(let host, let port, let error):
-            proxyFailures[host.lowercased()] = ProxyFailure(error: error, date: .now)
+            // WebKit's first attempt is always rejected with 407 and retried with the credentials:
+            // routine, so it must not explain a later navigation failure.
+            if !error.hasPrefix("407") {
+                proxyFailures[host.lowercased()] = ProxyFailure(error: error, date: .now)
+            }
             log("ошибка \(host):\(port): \(error)")
         }
     }
