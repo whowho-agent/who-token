@@ -22,6 +22,8 @@ public final class LocalProxyServer: Sendable {
         public var extraTrustRootsPEM: [Data]
         /// `Proxy-Authorization: Basic` credentials required from clients; nil disables the check.
         public var credentials: (user: String, password: String)?
+        /// Upstream TLS sessions to resume instead of signing with the token again; nil disables resumption.
+        public var sessionCache: UpstreamSessionCache?
         public var onEvent: @Sendable (ProxyEvent) -> Void
 
         public init(
@@ -29,23 +31,28 @@ public final class LocalProxyServer: Sendable {
             identityProvider: any ClientIdentityProvider,
             extraTrustRootsPEM: [Data] = [],
             credentials: (user: String, password: String)? = nil,
+            sessionCache: UpstreamSessionCache? = UpstreamSessionCache(),
             onEvent: @escaping @Sendable (ProxyEvent) -> Void = { _ in }
         ) {
             self.shouldIntercept = shouldIntercept
             self.identityProvider = identityProvider
             self.extraTrustRootsPEM = extraTrustRootsPEM
             self.credentials = credentials
+            self.sessionCache = sessionCache
             self.onEvent = onEvent
         }
     }
 
     public let authority: MitmCertificateAuthority
+    /// Clear it (`removeAll()`) when the user signs out of the token.
+    public let sessionCache: UpstreamSessionCache?
     private let channel: Channel
 
     public var port: Int { channel.localAddress?.port ?? 0 }
 
-    private init(authority: MitmCertificateAuthority, channel: Channel) {
+    private init(authority: MitmCertificateAuthority, sessionCache: UpstreamSessionCache?, channel: Channel) {
         self.authority = authority
+        self.sessionCache = sessionCache
         self.channel = channel
     }
 
@@ -62,7 +69,7 @@ public final class LocalProxyServer: Sendable {
             }
             .bind(host: "127.0.0.1", port: port)
             .get()
-        return LocalProxyServer(authority: authority, channel: channel)
+        return LocalProxyServer(authority: authority, sessionCache: configuration.sessionCache, channel: channel)
     }
 
     public func stop() async {
@@ -137,21 +144,28 @@ final class ProxyFrontHandler: ChannelInboundHandler, RemovableChannelHandler, @
                 : nil
             let hasIdentity = identity != nil
             let serverHostname = UpstreamTLS.serverHostname(host)
-            let channel = try await ClientBootstrap(group: loop)
+            let lease = intercept
+                ? await configuration.sessionCache?.checkout(.init(host: host, port: port, identity: identity))
+                : nil
+            let bootstrap = ClientBootstrap(group: loop)
                 .connectTimeout(.seconds(15))
                 .channelInitializer { channel in
                     channel.eventLoop.makeCompletedFuture {
                         if let upstreamContext {
-                            try channel.pipeline.syncOperations.addHandler(
-                                NIOSSLClientHandler(context: upstreamContext, serverHostname: serverHostname)
+                            try UpstreamTLS.addClientHandlers(
+                                to: channel.pipeline.syncOperations, context: upstreamContext,
+                                serverHostname: serverHostname, lease: lease
                             )
                         }
                         try channel.pipeline.syncOperations.addHandler(upstreamGlue)
                     }
                 }
-                .connect(host: host, port: port)
-                .get()
-            return (channel, hasIdentity)
+            do {
+                return (try await bootstrap.connect(host: host, port: port).get(), hasIdentity)
+            } catch {
+                lease?.finish()
+                throw error
+            }
         }
 
         promise.futureResult.whenComplete { result in

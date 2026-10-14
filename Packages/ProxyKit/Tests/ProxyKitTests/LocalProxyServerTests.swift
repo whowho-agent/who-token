@@ -8,7 +8,7 @@ import Testing
 import TokenKit
 @testable import ProxyKit
 
-private struct SoftwareIdentityProvider: ClientIdentityProvider {
+struct SoftwareIdentityProvider: ClientIdentityProvider {
     let recorder: SignRecorder
 
     func identity(for host: String) async throws -> ClientIdentity? {
@@ -24,7 +24,7 @@ private struct SoftwareIdentityProvider: ClientIdentityProvider {
 
 /// Client speaking to the proxy like WebKit does: CONNECT, then TLS inside the tunnel.
 /// (URLSession can't be used here: CFNetwork never proxies loopback addresses.)
-private enum ProxyClient {
+enum ProxyClient {
     static func get(host: String, port: Int, proxyPort: Int, trustRootsDER: [Data]) async throws -> String {
         var tls = TLSConfiguration.makeClientConfiguration()
         tls.trustRoots = .certificates(try trustRootsDER.map { try NIOSSLCertificate(bytes: Array($0), format: .der) })
