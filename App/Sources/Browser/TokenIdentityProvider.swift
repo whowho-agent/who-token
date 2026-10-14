@@ -4,10 +4,13 @@ import TokenKit
 
 /// Gives the proxy the client identity from the connected Rutoken. The PIN is asked lazily, on the first
 /// signature, and only once even when WebKit opens several connections at the same time.
+/// After a typed PIN works it is kept for 24 hours behind Face ID (`StoredPin`), so a later login needs
+/// only a glance.
 actor TokenIdentityProvider: ClientIdentityProvider {
     private let service: TokenService
     private let prompter: PinPrompter
     private let onStatus: @Sendable (IdentityStatus) -> Void
+    private let storedPin = StoredPin()
     private var login: Task<Void, Error>?
 
     init(service: TokenService, prompter: PinPrompter, onStatus: @escaping @Sendable (IdentityStatus) -> Void = { _ in }) {
@@ -18,9 +21,11 @@ actor TokenIdentityProvider: ClientIdentityProvider {
 
     /// Logs out of the token and forgets any stored PIN ("Сбросить вход на токен" in settings).
     func forgetLogin() async {
+        storedPin.delete()
         for token in (try? await service.tokens()) ?? [] {
             await service.logout(slot: token.slot)
         }
+        AppLog.write("[identity] вход на токен сброшен, сохранённый PIN удалён")
     }
 
     func identity(for host: String) async throws -> ClientIdentity? {
@@ -55,7 +60,7 @@ actor TokenIdentityProvider: ClientIdentityProvider {
                     return try await service.sign(message, keyID: keyID, algorithm: algorithm, slot: slot)
                 } catch Pkcs11Error.notLoggedIn {
                     AppLog.write("[identity] \(host) запросил клиентский сертификат, нужен PIN")
-                    try await self.ensureLoggedIn(token)
+                    try await self.ensureLoggedIn(token, host: host)
                     return try await service.sign(message, keyID: keyID, algorithm: algorithm, slot: slot)
                 }
             }
@@ -78,20 +83,54 @@ actor TokenIdentityProvider: ClientIdentityProvider {
             return Data(base64Encoded: base64).flatMap { try? TokenCertificate(keyID: Data(), label: "", der: $0) }
         }
 
-    private func ensureLoggedIn(_ token: TokenInfo) async throws {
+    /// Logs in once for all concurrent signers; every waiting host gets its own status on failure.
+    private func ensureLoggedIn(_ token: TokenInfo, host: String) async throws {
         if await service.isLoggedIn(slot: token.slot) { return }
-        if let login {
-            try await login.value
-            return
+        do {
+            if let login {
+                try await login.value
+            } else {
+                let task = Task { try await self.logIn(token) }
+                login = task
+                defer { login = nil }
+                try await task.value
+            }
+        } catch is CancellationError {
+            onStatus(.pinCancelled(host: host))
+            throw CancellationError()
+        } catch {
+            onStatus(.loginFailed(host: host, reason: String(describing: error)))
+            throw error
         }
-        let task = Task { try await self.promptAndLogin(token) }
-        login = task
-        defer { login = nil }
-        try await task.value
     }
 
-    private func promptAndLogin(_ token: TokenInfo) async throws {
+    private func logIn(_ token: TokenInfo) async throws {
         var retriesLeft = token.userPinRetriesLeft
+        switch await storedPin.read(serial: token.serialNumber, reason: "Вход на токен \(token.label)") {
+        case .pin(let pin):
+            do {
+                try await service.login(slot: token.slot, pin: pin)
+                AppLog.write("[identity] вход на токен по сохранённому PIN (Face ID)")
+                onStatus(.signedIn)
+                return
+            } catch Pkcs11Error.pinIncorrect(let left) {
+                // Never try a stored PIN twice: the token locks after a few wrong attempts.
+                storedPin.delete()
+                retriesLeft = left
+                AppLog.write("[identity] сохранённый PIN не подошёл и удалён, осталось попыток: \(left.map(String.init) ?? "?")")
+            }
+        case .cancelled:
+            AppLog.write("[identity] Face ID отменён, спрашиваем PIN")
+        case .unavailable(let reason):
+            AppLog.write("[identity] сохранённый PIN недоступен (\(reason)), спрашиваем PIN")
+        case .none:
+            break
+        }
+        try await promptAndLogin(token, retriesLeft: retriesLeft)
+    }
+
+    private func promptAndLogin(_ token: TokenInfo, retriesLeft: Int?) async throws {
+        var retriesLeft = retriesLeft
         while true {
             guard let pin = await prompter.ask(PinRequest(tokenLabel: token.label, retriesLeft: retriesLeft)) else {
                 throw CancellationError()
@@ -99,10 +138,21 @@ actor TokenIdentityProvider: ClientIdentityProvider {
             do {
                 try await service.login(slot: token.slot, pin: pin)
                 AppLog.write("[identity] вход на токен выполнен")
+                onStatus(.signedIn)
+                remember(pin, token: token)
                 return
             } catch Pkcs11Error.pinIncorrect(let left) {
                 retriesLeft = left
             }
+        }
+    }
+
+    private func remember(_ pin: String, token: TokenInfo) {
+        do {
+            try storedPin.save(pin, serial: token.serialNumber)
+            AppLog.write("[identity] PIN сохранён в Keychain под Face ID на 24 ч")
+        } catch {
+            AppLog.write("[identity] PIN не сохранён: \(error)")
         }
     }
 }

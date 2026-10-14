@@ -31,6 +31,8 @@
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Bluetooth используется для работы с Рутокен ЭЦП Bluetooth</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Face ID открывает сохранённый PIN токена, чтобы не вводить его заново в течение суток</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Доступ к локальной сети нужен для тестового mTLS-стенда</string>
 	<key>RBSharedKeychainGroup</key>
