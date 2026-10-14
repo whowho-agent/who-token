@@ -6,7 +6,18 @@ import TokenKit
 /// Publishes token certificates to the system through the app's CryptoTokenKit extension, so Safari
 /// offers them as client identities and asks the extension to sign.
 enum SystemTokenRegistry {
-    static var extensionID: String { (Bundle.main.bundleIdentifier ?? "") + ".TokenExtension" }
+    /// The token driver's class id, read from the embedded extension: re-signing may change the app's
+    /// bundle id but leaves the extension's `com.apple.ctk.class-id` as built.
+    static let extensionID: String = {
+        let plist = Bundle.main.builtInPlugInsURL?
+            .appending(path: "RutokenTokenExtension.appex/Info.plist")
+        let attributes = plist
+            .flatMap { NSDictionary(contentsOf: $0) as? [String: Any] }
+            .flatMap { $0["NSExtension"] as? [String: Any] }
+            .flatMap { $0["NSExtensionAttributes"] as? [String: Any] }
+        return attributes?["com.apple.ctk.class-id"] as? String
+            ?? (Bundle.main.bundleIdentifier ?? "") + ".TokenExtension"
+    }()
 
     static func tokenID(serialNumber: String) -> String { "\(extensionID):\(serialNumber)" }
 

@@ -1,11 +1,33 @@
 import Foundation
 import Security
 
-/// Small keychain store shared by the app and its CryptoTokenKit extension
-/// (keychain access group from the `RBSharedKeychainGroup` Info.plist key).
+/// Small keychain store shared by the app and its extensions.
 public enum SharedKeychain {
-    public static var accessGroup: String? {
-        Bundle.main.object(forInfoDictionaryKey: "RBSharedKeychainGroup") as? String
+    /// The shared access group. Discovered at run time rather than taken from Info.plist, because
+    /// re-signing (Sideloadly, another team) changes the team prefix in the entitlements: iOS puts a new
+    /// item into the first `keychain-access-groups` entry, which is the shared group in all three targets.
+    public static let accessGroup: String? = discoverAccessGroup()
+        ?? Bundle.main.object(forInfoDictionaryKey: "RBSharedKeychainGroup") as? String
+
+    private static func discoverAccessGroup() -> String? {
+        let probe: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: "RutokenBrowser.group-probe",
+            kSecAttrAccount: "probe",
+            kSecUseDataProtectionKeychain: true
+        ]
+        var query = probe
+        query[kSecReturnAttributes] = true
+        var result: CFTypeRef?
+        var status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            var item = probe
+            item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            item[kSecReturnAttributes] = true
+            status = SecItemAdd(item as CFDictionary, &result)
+        }
+        guard status == errSecSuccess else { return nil }
+        return (result as? [CFString: Any])?[kSecAttrAccessGroup] as? String
     }
 
     public static func set(_ value: Data, account: String) {

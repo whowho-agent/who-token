@@ -105,4 +105,5 @@ cd Packages/TokenKit && swift run tokenctl list
 | `App/SafariExtension` | расширение Safari: ввод PIN |
 | `stand/` | тестовый стенд |
 | `tools/make-root-profile.sh` | профиль `.mobileconfig` для установки корневого сертификата на iPhone |
+| `tools/build-neutral-ipa.sh` | нейтральная `dist/Rutoken-unsigned.ipa` (без подписи и личных данных) для Sideloadly |
 | `docs/ARCHITECTURE.md` | архитектура, план, результаты |
