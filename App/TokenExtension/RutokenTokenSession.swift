@@ -16,8 +16,17 @@ final class RutokenTokenSession: TKTokenSession, TKTokenSessionDelegate {
             throw TKError(.objectNotFound)
         }
         // A PIN handed over by the app lets the extension log in without system UI.
-        if !rutoken.isLoggedIn(), let pin = SharedPin.load() {
-            try? rutoken.login(pin: pin)
+        if rutoken.isLoggedIn() {
+            ExtensionLog.append("sign: token already logged in (this extension process)")
+        } else if let pin = SharedPin.load() {
+            do {
+                try rutoken.login(pin: pin)
+                ExtensionLog.append("sign: logged in with PIN shared by the app")
+            } catch {
+                ExtensionLog.append("sign: shared PIN login failed: \(error)")
+            }
+        } else {
+            ExtensionLog.append("sign: not logged in and no shared PIN")
         }
         do {
             let signature = try rutoken.sign(dataToSign, keyID: keyID, algorithm: digestAlgorithm)

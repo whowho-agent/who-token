@@ -11,6 +11,10 @@ struct RutokenBrowserApp: App {
         let service = try? TokenService()
         let prompter = PinPrompter()
         let readerMonitor = ReaderMonitor()
+        #if DEBUG
+        // CryptoTokenKit extension diagnostics: its log lives in the shared keychain.
+        AppLog.write("[extension log at launch]\n" + ExtensionLog.read().suffix(30).joined(separator: "\n"))
+        #endif
         // USB tokens become visible to PKCS#11 only once RtPcsc reader discovery runs.
         Task {
             for await readers in await readerMonitor.start() {
