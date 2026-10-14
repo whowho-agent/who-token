@@ -58,20 +58,25 @@ api.webNavigation.onErrorOccurred.addListener(async (details) => {
   await api.tabs.remove(details.tabId).catch(() => {});
 });
 
-/** Tells the app the extension is enabled and whether it may read all https sites (for its checklist). */
+/** Tells the app the extension is enabled and whether it may read https sites (for its checklist). */
 let lastHeartbeat = 0;
-async function heartbeat() {
-  if (Date.now() - lastHeartbeat < 30 * 1000) return;
+async function heartbeat(sawHTTPSPage = false) {
+  if (!sawHTTPSPage && Date.now() - lastHeartbeat < 30 * 1000) return;
   lastHeartbeat = Date.now();
-  const allSites = await api.permissions.contains({ origins: ['https://*/*'] }).catch(() => false);
-  api.runtime.sendNativeMessage('application.id', { action: 'heartbeat', allSites }).catch(() => {});
+  let allSites = null; // unknown when Safari doesn't expose the permissions API
+  try {
+    if (api.permissions?.contains) allSites = await api.permissions.contains({ origins: ['https://*/*'] });
+  } catch (e) { /* stays unknown */ }
+  api.runtime.sendNativeMessage('application.id', { action: 'heartbeat', from: 'background', allSites, sawHTTPSPage })
+    .catch(() => {});
 }
 
 api.tabs.onActivated.addListener(() => { updateBadge(); heartbeat(); });
 api.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId !== 0) return;
   updateBadge();
-  heartbeat();
+  // Receiving this event for an https page proves access to that site.
+  heartbeat(details.url.startsWith('https://'));
 });
 api.runtime.onMessage.addListener((message) => {
   if (message?.type === 'pinChanged') updateBadge();

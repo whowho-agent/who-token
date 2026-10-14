@@ -1,9 +1,15 @@
-dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 16px 0; }
-dt { color: #888; }
+#site-form { flex-direction: row; }
+#site-form button { width: auto; padding: 0 18px; flex: none; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 16px 0; font-size: 15px; }
+dt { color: var(--secondary); }
 dd { margin: 0; word-break: break-word; }
-h2 { font-size: 16px; margin: 16px 0 8px; }
-pre#fingerprint { font: 16px ui-monospace, Menlo, monospace; line-height: 1.6; background: #8881; padding: 12px; border-radius: 8px; white-space: pre-wrap; }
-.warn-box { border-left: 3px solid #c62828; padding-left: 10px; }
-#anchors.ok { color: #1a7f37; }
-#anchors.bad { color: #c62828; font-weight: 600; }
-#download { margin-top: 8px; width: 100%; }
+pre#fingerprint {
+  font: 15px/1.7 ui-monospace, "SF Mono", Menlo, monospace; background: var(--fill);
+  padding: 12px 14px; border-radius: 12px; white-space: pre-wrap; margin: 0 0 12px;
+}
+.warn-box { font-size: 13px; color: var(--secondary); }
+#anchors { font-weight: 600; }
+#anchors.ok { color: var(--green); }
+#anchors.bad { color: var(--orange); }
+#download { margin-top: 4px; }
+#open-app { text-align: center; width: 100%; }

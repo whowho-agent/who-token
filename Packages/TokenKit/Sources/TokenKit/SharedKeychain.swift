@@ -153,17 +153,25 @@ public enum SafariExtensionReport {
     public struct Report: Sendable {
         public let date: Date
         /// The extension may read pages on all https sites, needed to notice failed sign-ins.
-        public let allSitesAllowed: Bool
+        /// nil when Safari doesn't expose the permissions API.
+        public let allSitesAllowed: Bool?
+        /// The extension saw an https page load, so it has access at least to the sites being opened.
+        public let sawHTTPSPage: Bool
     }
 
-    public static func store(allSitesAllowed: Bool, now: Date = .now) {
-        SharedKeychain.set(Data("\(now.timeIntervalSince1970)|\(allSitesAllowed ? 1 : 0)".utf8), account: account)
+    public static func store(allSitesAllowed: Bool?, sawHTTPSPage: Bool, now: Date = .now) {
+        let previous = latest
+        let all = allSitesAllowed.map { $0 ? "1" : "0" } ?? "?"
+        // Once seen, keep "saw a page" until a report says access is denied.
+        let saw = sawHTTPSPage || (previous?.sawHTTPSPage ?? false) && allSitesAllowed != false
+        SharedKeychain.set(Data("\(now.timeIntervalSince1970)|\(all)|\(saw ? 1 : 0)".utf8), account: account)
     }
 
     public static var latest: Report? {
         guard let raw = SharedKeychain.get(account: account).map({ String(decoding: $0, as: UTF8.self) }) else { return nil }
-        let parts = raw.split(separator: "|")
-        guard parts.count == 2, let seconds = TimeInterval(parts[0]) else { return nil }
-        return Report(date: Date(timeIntervalSince1970: seconds), allSitesAllowed: parts[1] == "1")
+        let parts = raw.split(separator: "|").map(String.init)
+        guard parts.count >= 2, let seconds = TimeInterval(parts[0]) else { return nil }
+        let all: Bool? = parts[1] == "1" ? true : parts[1] == "0" ? false : nil
+        return Report(date: Date(timeIntervalSince1970: seconds), allSitesAllowed: all, sawHTTPSPage: parts.count > 2 && parts[2] == "1")
     }
 }

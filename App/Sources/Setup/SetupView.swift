@@ -5,33 +5,28 @@ struct SetupView: View {
     @State var model: SetupModel
     @State private var pin = ""
     @FocusState private var pinFocused: Bool
-    /// Site whose root certificate to look up, set by the toolbar link or a `rutoken://root?site=` URL
-    /// from the Safari extension.
+    /// Site whose root certificate to look up: the work site, or a `rutoken://root?site=` URL from the
+    /// Safari extension.
     @State private var rootSite: RootSite?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
-            Form {
-                if let message = model.message {
-                    Section {
-                        Label(message.text, systemImage: message.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                            .foregroundStyle(message.isError ? .red : .green)
-                    }
-                }
-                ReadinessSection(model: model) { site in rootSite = RootSite(address: site) }
-                tokenSection
-                safariSection
+            List {
+                Section { SetupHeader(remaining: ReadinessSection.remaining(model)) }
+                ReadinessSection(model: model) { rootSite = RootSite(address: model.workSite) }
                 pinSection
-                rootSection
-                instructionsSection
-                #if DEBUG
-                diagnosticsSection
-                #endif
+                Section {
+                    NavigationLink("Токен и сертификаты") { TokenDetailView(model: model) }
+                    #if DEBUG
+                    NavigationLink("Журнал расширений") { ExtensionLogView(model: model) }
+                    #endif
+                }
             }
-            .navigationTitle("Рутокен для Safari")
+            .listStyle(.insetGrouped)
+            .navigationTitle("Рутокен")
+            .navigationBarTitleDisplayMode(.inline)
             .refreshable { await model.refresh() }
-            .overlay { if model.isBusy { ProgressView().controlSize(.large) } }
             .task { await model.start() }
             // Coming back from Settings (extension switched on, profile installed): re-check.
             .onChange(of: scenePhase) { _, phase in
@@ -39,6 +34,7 @@ struct SetupView: View {
             }
             .navigationDestination(item: $rootSite) { site in
                 RootCertificateView(model: RootCertificateModel(address: site.address))
+                    .onDisappear { Task { await model.workSiteChanged() } }
             }
             .onOpenURL { url in
                 // rutoken://root?site=wiki.example.com — opened by the Safari extension.
@@ -47,69 +43,22 @@ struct SetupView: View {
                     .queryItems?.first { $0.name == "site" }?.value ?? ""
                 rootSite = RootSite(address: site)
             }
-        }
-    }
-
-    private var rootSection: some View {
-        Section {
-            Button("Установить корневой сертификат сайта…", systemImage: "checkmark.shield") {
-                rootSite = RootSite(address: "")
-            }
-        } header: {
-            Text("Сертификат сервера")
-        } footer: {
-            Text("Если Safari пишет, что соединение с внутренним сайтом не является частным: найдём корневой сертификат сайта и поможем установить его профилем. Перед установкой сверьте отпечаток с ИТ.")
-        }
-    }
-
-    private var tokenSection: some View {
-        Section("Токен") {
-            if let token = model.token {
-                LabeledContent("Модель", value: token.info.model)
-                LabeledContent("Серийный номер", value: token.info.serialNumber)
-                if let left = token.info.userPinRetriesLeft, let max = token.info.userPinMaxRetries {
-                    LabeledContent("Попыток PIN", value: "\(left) из \(max)")
-                }
-                if token.certificates.isEmpty {
-                    Text("Нет действующих сертификатов для входа").foregroundStyle(.red)
-                }
-                ForEach(token.certificates) { cert in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(cert.commonName ?? cert.subject).font(.headline)
-                        Text(cert.issuer).font(.caption).foregroundStyle(.secondary)
-                        Text("до \(cert.notValidAfter.formatted(date: .abbreviated, time: .omitted))").font(.caption)
-                    }
-                }
-            } else {
-                Label("Подключите USB-токен Рутокен", systemImage: "cable.connector")
-                    .foregroundStyle(.secondary)
+            .alert("Не получилось", isPresented: errorShown, presenting: model.message) { _ in
+                Button("OK") { model.clearMessage() }
+            } message: { message in
+                Text(message.text)
             }
         }
     }
 
-    private var safariSection: some View {
-        Section {
-            if model.isRegistered {
-                Label("Сертификат доступен в Safari", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
-                Button("Обновить сертификаты", systemImage: "arrow.clockwise") { Task { await model.register() } }
-                    .disabled(model.token == nil)
-                Button("Отключить от Safari", systemImage: "xmark.circle", role: .destructive) { Task { await model.unregister() } }
-            } else {
-                Button("Подключить токен к Safari", systemImage: "safari") { Task { await model.register() } }
-                    .disabled(model.token?.certificates.isEmpty ?? true)
-            }
-        } header: {
-            Text("Safari")
-        } footer: {
-            Text("Сайты, запрашивающие сертификат, получат его с токена; подпись выполняется на токене. После замены сертификата нажмите «Обновить сертификаты».")
-        }
+    private var errorShown: Binding<Bool> {
+        Binding(get: { model.message?.isError == true }, set: { if !$0 { model.clearMessage() } })
     }
 
     private var pinSection: some View {
         Section {
             if let expiry = model.pinExpiry {
-                Label("PIN действует до \(expiry.formatted(date: .omitted, time: .shortened))", systemImage: "key.fill")
-                    .foregroundStyle(.green)
+                LabeledContent("Действует до", value: expiry.formatted(date: .omitted, time: .shortened))
                 Button("Забыть PIN", role: .destructive) { Task { await model.forgetPin() } }
             } else {
                 // Rutoken PINs may contain letters, so a full ASCII keyboard is required.
@@ -120,38 +69,17 @@ struct SetupView: View {
                     .focused($pinFocused)
                     .submitLabel(.done)
                     .onSubmit(savePin)
-                Button("Проверить и сохранить на 24 часа", action: savePin)
-                    .disabled(pin.isEmpty || model.token == nil || model.isBusy)
+                Button(action: savePin) {
+                    if model.isBusy { ProgressView() } else { Text("Сохранить на 24 часа") }
+                }
+                .disabled(pin.isEmpty || model.token == nil || model.isBusy)
             }
         } header: {
             Text("PIN")
         } footer: {
-            Text("iOS не спрашивает PIN для токена сама. Введите его здесь или кнопкой «Рутокен» в Safari (значок «аА» в адресной строке). PIN хранится на этом устройстве 24 часа и защищён код-паролем.")
+            Text("PIN также можно ввести кнопкой «Рутокен» в Safari. Он хранится только на этом iPhone.")
         }
     }
-
-    private var instructionsSection: some View {
-        Section("Первая настройка") {
-            Step(number: 1, text: "Подключите токен и нажмите «Подключить токен к Safari».")
-            Step(number: 2, text: "Настройки → Приложения → Safari → Расширения → «Рутокен»: включите и разрешите на нужных сайтах.")
-            Step(number: 3, text: "Если сайты организации используют собственный корневой сертификат: «Установить корневой сертификат сайта…», сверьте отпечаток, установите профиль и включите его в Настройки → Основные → Об этом устройстве → Доверие сертификатам.")
-            Step(number: 4, text: "Введите PIN здесь или в расширении «Рутокен» и откройте сайт в Safari. Если Safari пишет, что не может установить безопасное соединение, — введите PIN и обновите страницу.")
-        }
-    }
-
-    #if DEBUG
-    private var diagnosticsSection: some View {
-        Section("Журнал расширений") {
-            if model.extensionLog.isEmpty {
-                Text("Пусто").foregroundStyle(.secondary)
-            }
-            ForEach(Array(model.extensionLog.prefix(50).enumerated()), id: \.offset) { _, line in
-                Text(line).font(.system(size: 11, design: .monospaced))
-            }
-            Button("Очистить журнал") { model.clearExtensionLog() }
-        }
-    }
-    #endif
 
     private func savePin() {
         guard !pin.isEmpty else { return }
@@ -162,17 +90,75 @@ struct SetupView: View {
     }
 }
 
-private struct Step: View {
-    let number: Int
-    let text: String
+/// Token details and its registration in Safari.
+private struct TokenDetailView: View {
+    @Bindable var model: SetupModel
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("\(number)").font(.headline).foregroundStyle(.tint)
-            Text(text)
+        List {
+            if let token = model.token {
+                Section("Токен") {
+                    LabeledContent("Модель", value: token.info.model)
+                    LabeledContent("Серийный номер", value: token.info.serialNumber)
+                    if let left = token.info.userPinRetriesLeft, let max = token.info.userPinMaxRetries {
+                        LabeledContent("Попыток PIN", value: "\(left) из \(max)")
+                    }
+                }
+                Section("Сертификаты") {
+                    if token.certificates.isEmpty {
+                        Text("Нет действующих сертификатов для входа").foregroundStyle(.secondary)
+                    }
+                    ForEach(token.certificates) { cert in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(cert.commonName ?? cert.subject)
+                            Text("до \(cert.notValidAfter.formatted(date: .abbreviated, time: .omitted)) · \(cert.issuer)")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                }
+            } else {
+                Section {
+                    ContentUnavailableView("Токен не подключён", systemImage: "cable.connector",
+                                           description: Text("Вставьте USB-токен Рутокен."))
+                }
+            }
+            Section {
+                Button(model.isRegistered ? "Обновить сертификаты в Safari" : "Подключить к Safari") {
+                    Task { await model.register() }
+                }
+                .disabled(model.token?.certificates.isEmpty ?? true)
+                if model.isRegistered {
+                    Button("Отключить от Safari", role: .destructive) { Task { await model.unregister() } }
+                }
+            } footer: {
+                Text("После замены сертификата на токене нажмите «Обновить сертификаты в Safari».")
+            }
         }
+        .navigationTitle("Токен")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+#if DEBUG
+private struct ExtensionLogView: View {
+    @Bindable var model: SetupModel
+
+    var body: some View {
+        List {
+            if model.extensionLog.isEmpty {
+                Text("Пусто").foregroundStyle(.secondary)
+            }
+            ForEach(Array(model.extensionLog.prefix(100).enumerated()), id: \.offset) { _, line in
+                Text(line).font(.system(size: 11, design: .monospaced))
+            }
+        }
+        .navigationTitle("Журнал")
+        .toolbar { Button("Очистить") { model.clearExtensionLog() } }
+    }
+}
+#endif
 
 struct RootSite: Identifiable, Hashable {
     let id = UUID()

@@ -45,7 +45,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 ExtensionLog.append("safari: PIN entered in Safari popup")
             }
         case "heartbeat":
-            SafariExtensionReport.store(allSitesAllowed: message["allSites"] as? Bool ?? false)
+            let allSites = message["allSites"] as? Bool
+            let sawPage = message["sawHTTPSPage"] as? Bool ?? false
+            SafariExtensionReport.store(allSitesAllowed: allSites, sawHTTPSPage: sawPage)
+            ExtensionLog.append("safari: heartbeat from \(message["from"] as? String ?? "?"), all sites \(allSites.map(String.init) ?? "unknown"), saw https \(sawPage)")
         case "log":
             #if DEBUG
             ExtensionLog.append("safari js: \(message["text"] as? String ?? "")")

@@ -1,16 +1,52 @@
-:root { color-scheme: light dark; }
-body { font: 15px -apple-system, system-ui, sans-serif; margin: 16px; min-width: 260px; }
-body.page { max-width: 480px; margin: 48px auto; padding: 0 16px; font-size: 17px; }
-h1 { display: flex; align-items: center; gap: 8px; font-size: 17px; margin: 0 0 8px; }
-body.page h1 { font-size: 22px; }
-#status { margin: 0 0 12px; }
-#status.ok { color: #1a7f37; }
-#status.warn { color: #c62828; }
-form { display: flex; gap: 8px; }
-input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #8884; }
-button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 0; background: #d62d2d; color: #fff; }
-#forget, #back, .link { margin-top: 12px; background: transparent; color: #d62d2d; padding: 0; display: block; }
-.hint { color: #888; font-size: 12px; margin-top: 16px; }
-body.page .hint { font-size: 14px; }
-#access { font-size: 13px; }
-.warn { color: #c62828; }
+/* iOS look: system font and colors, grouped fills, 44 pt controls, tint for actions. */
+:root {
+  color-scheme: light dark;
+  --tint: #d62d2d;
+  --label: CanvasText;
+  --secondary: rgba(60, 60, 67, 0.6);
+  --fill: rgba(118, 118, 128, 0.12);
+  --green: #248a3d;
+  --orange: #c93400;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --tint: #ff453a; --secondary: rgba(235, 235, 245, 0.6); --fill: rgba(118, 118, 128, 0.24); --green: #30d158; --orange: #ff9f0a; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { font: 15px/1.35 -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; min-width: 300px; -webkit-text-size-adjust: 100%; }
+body.page { max-width: 440px; margin: 0 auto; padding: 32px 20px; font-size: 17px; }
+
+h1 { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 600; margin: 0 0 12px; }
+h1 img { width: 28px; height: 28px; border-radius: 7px; }
+body.page h1 { font-size: 22px; font-weight: 700; }
+body.page h1 img { width: 36px; height: 36px; border-radius: 8px; }
+h2 { font-size: 13px; font-weight: 400; text-transform: uppercase; color: var(--secondary); margin: 20px 0 6px; }
+
+p { margin: 0 0 12px; }
+#intro { color: var(--secondary); }
+#status { display: flex; align-items: center; gap: 6px; font-size: 15px; }
+#status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--secondary); flex: none; }
+#status:empty { display: none; }
+#status.ok::before { background: var(--green); }
+#status.warn { color: var(--orange); }
+#status.warn::before { background: var(--orange); }
+
+form { display: flex; flex-direction: column; gap: 10px; }
+input {
+  width: 100%; height: 44px; padding: 0 12px; border: 0; border-radius: 10px;
+  background: var(--fill); color: inherit; font: inherit; font-size: 17px; outline: none;
+}
+input:focus { box-shadow: 0 0 0 2px var(--tint); }
+button {
+  height: 44px; border: 0; border-radius: 12px; background: var(--tint); color: #fff;
+  font: inherit; font-size: 17px; font-weight: 600; width: 100%;
+}
+button:active { opacity: 0.7; }
+button.link, #forget, #back, #grant {
+  height: auto; width: auto; background: none; color: var(--tint); font-weight: 400; padding: 10px 0 0;
+  display: block; font-size: 15px; margin: 0 auto; text-align: center;
+}
+#access { color: var(--orange); font-size: 13px; }
+#access #grant { display: inline; padding: 0; font-size: 13px; }
+.hint { color: var(--secondary); font-size: 12px; margin-top: 16px; }
+body.page .hint { font-size: 13px; }

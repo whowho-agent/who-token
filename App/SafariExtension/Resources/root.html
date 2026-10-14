@@ -9,7 +9,7 @@
   <script type="module" src="root.js"></script>
 </head>
 <body class="page">
-  <h1><img src="images/icon-48.png" alt="" width="24" height="24"> Корневой сертификат сайта</h1>
+  <h1><img src="images/icon-96.png" alt=""> Сертификат сервера</h1>
   <form id="site-form">
     <input id="site" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
            placeholder="wiki.example.com" enterkeyhint="search">
@@ -26,13 +26,12 @@
     <p id="anchors"></p>
     <h2>Отпечаток SHA-256</h2>
     <pre id="fingerprint"></pre>
-    <p class="warn-box">Сверьте <b>все символы</b> с отпечатком, который опубликовала ваша ИТ-служба.
-      Не устанавливайте, если отпечатка у вас нет или он отличается: корень с полным доверием позволяет
-      его владельцу подделывать любые сайты.</p>
-    <button id="download" type="button">Отпечаток совпадает — загрузить профиль</button>
-    <button id="open-app" type="button" class="link">Не загружается? Открыть в приложении «Рутокен»</button>
-    <p class="hint">После загрузки: Настройки → «Профиль загружен» → «Установить». Затем включите доверие:
-      Настройки → Основные → Об этом устройстве → Доверие сертификатам.</p>
+    <p class="warn-box">Сверьте все символы с отпечатком от ИТ-службы. Не устанавливайте, если отпечатка нет
+      или он отличается: такой сертификат позволяет подделывать любые сайты.</p>
+    <button id="download" type="button">Отпечаток совпадает</button>
+    <button id="open-app" type="button" class="link">Открыть в приложении «Рутокен»</button>
+    <p class="hint">Кнопка загрузит профиль. Затем: Настройки → «Профиль загружен» → «Установить»
+      и Основные → Об этом устройстве → Доверие сертификатам → включить.</p>
   </section>
 </body>
 </html>

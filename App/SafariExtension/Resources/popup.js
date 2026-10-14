@@ -78,11 +78,16 @@ document.getElementById('root').addEventListener('click', async () => {
 const access = document.getElementById('access');
 const allSites = { origins: ['https://*/*'] };
 async function checkAccess() {
-  const granted = await browser.permissions.contains(allSites).catch(() => true);
-  access.hidden = granted;
+  let granted = null; // unknown without the permissions API
+  try {
+    if (browser.permissions?.contains) granted = await browser.permissions.contains(allSites);
+  } catch (e) { /* unknown */ }
+  access.hidden = granted !== false;
+  // The popup reliably runs, so it also reports to the app's readiness checklist.
+  send({ action: 'heartbeat', from: 'popup', allSites: granted, sawHTTPSPage: false }).catch(() => {});
 }
 document.getElementById('grant').addEventListener('click', async () => {
-  await browser.permissions.request(allSites).catch(() => {});
+  try { await browser.permissions?.request?.(allSites); } catch (e) { /* ignored */ }
   await checkAccess();
   browser.runtime.sendMessage({ type: 'permissionsChanged' }).catch(() => {});
 });

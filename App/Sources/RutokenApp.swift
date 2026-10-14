@@ -12,7 +12,7 @@ struct RutokenApp: App {
         AppLog.write("[keychain] shared group: \(SharedKeychain.accessGroup ?? "none"), token driver: \(SystemTokenRegistry.extensionID)")
         AppLog.write("[extension log at launch]\n" + ExtensionLog.read().suffix(300).joined(separator: "\n"))
         #endif
-        _setup = State(initialValue: SetupModel(service: try? TokenService(), readerMonitor: readerMonitor))
+        _setup = State(initialValue: SetupModel(readerMonitor: readerMonitor))
     }
 
     var body: some Scene {

@@ -39,15 +39,11 @@ final class SetupModel {
         let isError: Bool
     }
 
-    private let service: TokenService?
+    private var service: TokenService?
     private let readerMonitor: ReaderMonitor
 
-    init(service: TokenService?, readerMonitor: ReaderMonitor) {
-        self.service = service
+    init(readerMonitor: ReaderMonitor) {
         self.readerMonitor = readerMonitor
-        if service == nil {
-            message = Message(text: "Не удалось загрузить библиотеку Рутокен", isError: true)
-        }
     }
 
     var isRegistered: Bool {
@@ -56,7 +52,16 @@ final class SetupModel {
     }
 
     func start() async {
-        guard let service else { return }
+        // C_Initialize waits on PC/SC reader discovery; keep it off the main thread so the UI shows at once.
+        let service: TokenService
+        do {
+            service = try await Task.detached { try TokenService() }.value
+        } catch {
+            message = Message(text: "Не удалось загрузить библиотеку Рутокен: \(error)", isError: true)
+            await refreshReadiness()
+            return
+        }
+        self.service = service
         Task {
             for await _ in await readerMonitor.start() { await refresh() }
         }
@@ -183,6 +188,16 @@ final class SetupModel {
             .flatMap { Bundle(url: $0.appending(path: "RutokenSafariExtension.appex")) }?
             .bundleIdentifier ?? (Bundle.main.bundleIdentifier ?? "") + ".SafariExtension"
     }()
+
+    func clearMessage() {
+        message = nil
+    }
+
+    /// The root certificate screen remembers the site it checked as the work site.
+    func workSiteChanged() async {
+        workSite = UserDefaults.standard.string(forKey: "workSite") ?? workSite
+        await checkWorkSite()
+    }
 
     func clearExtensionLog() {
         ExtensionLog.clear()

@@ -28,6 +28,8 @@ final class RootCertificateModel {
         profileOffered = false
         do {
             root = try await RootCertificateFinder.find(siteAddress: address)
+            // Checked on the setup screen from now on.
+            UserDefaults.standard.set(address.trimmingCharacters(in: .whitespaces), forKey: "workSite")
         } catch {
             self.error = "\(error)"
         }
@@ -62,7 +64,7 @@ struct RootCertificateView: View {
                 Button("Найти корневой сертификат", systemImage: "magnifyingglass") { Task { await model.find() } }
                     .disabled(model.address.trimmingCharacters(in: .whitespaces).isEmpty || model.isLoading)
             } footer: {
-                Text("Адрес внутреннего сайта, на который Safari пишет «соединение не является частным».")
+                Text("Внутренний сайт, на котором Safari пишет, что соединение не является частным.")
             }
 
             if model.isLoading {
@@ -105,7 +107,7 @@ struct RootCertificateView: View {
         }
         if root.anchorsHost {
             Section {
-                Button("Отпечаток совпадает — загрузить профиль", systemImage: "arrow.down.doc") {
+                Button("Отпечаток совпадает, загрузить профиль", systemImage: "arrow.down.doc") {
                     Task { await model.offerProfile() }
                 }
                 if model.profileOffered {
