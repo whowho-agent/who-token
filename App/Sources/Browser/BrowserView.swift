@@ -97,9 +97,14 @@ private struct WebView: UIViewRepresentable {
         let configuration = WKWebViewConfiguration()
         let store = WKWebsiteDataStore.nonPersistent()
         // All WebKit traffic goes through the in-app proxy (iOS 17+).
-        store.proxyConfigurations = [ProxyConfiguration(
+        let proxyConfiguration = ProxyConfiguration(
             httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(integerLiteral: UInt16(proxyPort)))
-        )]
+        )
+        // The proxy rejects clients without its per-launch credentials (407); WebKit answers the challenge.
+        if let credentials = model.proxy?.credentials {
+            proxyConfiguration.applyCredential(username: credentials.user, password: credentials.password)
+        }
+        store.proxyConfigurations = [proxyConfiguration]
         configuration.websiteDataStore = store
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         // WKWebView's default user agent lacks "Version/… Safari/…", so sites sniffing for Safari

@@ -51,11 +51,16 @@ final class BrowserModel {
             Task { @MainActor in self?.record(status) }
         }
         self.identityProvider = identityProvider
+        // Other apps can reach 127.0.0.1 too, so the proxy wants per-launch credentials that only WebKit
+        // gets (ProxyConfiguration.applyCredential). Fallback if WebKit fails to authenticate on some
+        // iOS version (every connection logged as "407 ... no credentials"): pass `credentials: nil`.
+        let credentials = LocalProxyServer.randomCredentials()
         do {
             let proxy = try await LocalProxyServer.start(.init(
                 shouldIntercept: { host in hosts.withLock { Self.matches(host, $0) } },
                 identityProvider: identityProvider,
                 extraTrustRootsPEM: Self.standCA + Self.bundledTrustRoots,
+                credentials: credentials,
                 onEvent: { [weak self] event in
                     Task { @MainActor in self?.record(event) }
                 }
@@ -64,6 +69,7 @@ final class BrowserModel {
             proxyPort = proxy.port
             status = "Прокси 127.0.0.1:\(proxy.port)"
             AppLog.write("[browser] прокси запущен на порту \(proxy.port), сайты с токеном: \(tokenHosts)")
+            AppLog.write("[browser] прокси требует Proxy-Authorization (Basic, пароль на запуск); отказ виден как «407» в событиях")
             go()
         } catch {
             status = "Прокси не запустился: \(error)"
