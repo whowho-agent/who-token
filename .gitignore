@@ -13,3 +13,4 @@ App/ClientChain/*.pem
 App/TrustRoots/*.pem
 stand/ca/*.pem
 .DS_Store
+.claude/
