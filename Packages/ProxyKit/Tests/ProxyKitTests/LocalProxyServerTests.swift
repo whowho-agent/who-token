@@ -24,8 +24,8 @@ private struct SoftwareIdentityProvider: ClientIdentityProvider {
 
 /// Client speaking to the proxy like WebKit does: CONNECT, then TLS inside the tunnel.
 /// (URLSession can't be used here: CFNetwork never proxies loopback addresses.)
-private enum ProxyClient {
-    static func get(host: String, port: Int, proxyPort: Int, trustRootsDER: [Data]) async throws -> String {
+enum ProxyClient {
+    static func get(host: String, port: Int, proxyPort: Int, trustRootsDER: [Data], proxyAuthorization: String? = nil) async throws -> String {
         var tls = TLSConfiguration.makeClientConfiguration()
         tls.trustRoots = .certificates(try trustRootsDER.map { try NIOSSLCertificate(bytes: Array($0), format: .der) })
         let context = try NIOSSLContext(configuration: tls)
@@ -43,7 +43,8 @@ private enum ProxyClient {
             }
             .connect(host: "127.0.0.1", port: proxyPort)
             .get()
-        try await channel.writeAndFlush(ByteBuffer(string: "CONNECT \(host):\(port) HTTP/1.1\r\nHost: \(host):\(port)\r\n\r\n")).get()
+        let auth = proxyAuthorization.map { "Proxy-Authorization: \($0)\r\n" } ?? ""
+        try await channel.writeAndFlush(ByteBuffer(string: "CONNECT \(host):\(port) HTTP/1.1\r\nHost: \(host):\(port)\r\n\(auth)\r\n")).get()
         try await connectDone.withLockedValue { $0! }.futureResult.get()
 
         try await channel.eventLoop.submit {
@@ -72,7 +73,7 @@ private final class ConnectResponseHandler: ChannelInboundHandler, RemovableChan
     }
 }
 
-private final class EventRecorder: @unchecked Sendable {
+final class EventRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [ProxyEvent] = []
     func record(_ event: ProxyEvent) { lock.withLock { stored.append(event) } }

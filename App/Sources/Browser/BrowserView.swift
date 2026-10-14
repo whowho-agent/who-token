@@ -124,15 +124,21 @@ private struct WebView: UIViewRepresentable {
         // so the proxy is set on it here each time, before the first load.
         let store = model.dataStore
         // All WebKit traffic goes through the in-app proxy (iOS 17+).
-        store.proxyConfigurations = [ProxyConfiguration(
+        let proxyConfiguration = ProxyConfiguration(
             httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(integerLiteral: UInt16(proxyPort)))
-        )]
+        )
+        // The proxy rejects clients without its per-launch credentials (407); WebKit answers the challenge.
+        if let credentials = model.proxy?.credentials {
+            proxyConfiguration.applyCredential(username: credentials.user, password: credentials.password)
+        }
+        store.proxyConfigurations = [proxyConfiguration]
         configuration.websiteDataStore = store
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         // WKWebView's default user agent lacks "Version/… Safari/…", so sites sniffing for Safari
         // (e.g. apps choosing a modern or legacy JS bundle by user agent) serve a degraded or broken page.
         configuration.applicationNameForUserAgent = safariApplicationName()
-        // Diagnostics: forward JS errors and console warnings/errors to the app log.
+        #if DEBUG
+        // Diagnostics (Debug builds only): forward JS errors and console warnings/errors to the app log.
         configuration.userContentController.add(context.coordinator, name: "diag")
         configuration.userContentController.addUserScript(WKUserScript(source: """
             (function() {
@@ -146,6 +152,7 @@ private struct WebView: UIViewRepresentable {
               window.open = function() { send('window.open', arguments); return origOpen.apply(window, arguments); };
             })();
             """, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        #endif
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator

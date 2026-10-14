@@ -54,6 +54,7 @@ targets:
           NSAllowsArbitraryLoadsInWebContent: true
         NSLocalNetworkUsageDescription: Доступ к локальной сети нужен для тестового mTLS-стенда
         NSBluetoothAlwaysUsageDescription: Bluetooth используется для работы с Рутокен ЭЦП Bluetooth
+        NSFaceIDUsageDescription: Face ID открывает сохранённый PIN токена, чтобы не вводить его заново в течение суток
         RBSharedKeychainGroup: $(AppIdentifierPrefix)$(RB_BUNDLE_ID).shared
         com.apple.developer.nfc.readersession.iso7816.select-identifiers:
           - F0000000005275746F6B656E

@@ -40,13 +40,29 @@ public final class LocalProxyServer: Sendable {
     }
 
     public let authority: MitmCertificateAuthority
+    /// What clients must send in `Proxy-Authorization` (the client side gives them to WebKit).
+    public let credentials: (user: String, password: String)?
     private let channel: Channel
 
     public var port: Int { channel.localAddress?.port ?? 0 }
 
-    private init(authority: MitmCertificateAuthority, channel: Channel) {
+    private init(authority: MitmCertificateAuthority, credentials: (user: String, password: String)?, channel: Channel) {
         self.authority = authority
+        self.credentials = credentials
         self.channel = channel
+    }
+
+    /// Random per-launch credentials: any app on the phone can reach 127.0.0.1, only WebKit gets these.
+    public static func randomCredentials() -> (user: String, password: String) {
+        func random(_ count: Int) -> String {
+            var generator = SystemRandomNumberGenerator()  // arc4random: cryptographically secure on Apple platforms
+            let bytes = (0..<count).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
+            // base64url without padding: no ':' (Basic separator) and no characters needing escaping.
+            return Data(bytes).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        return ("rb-" + random(6), random(24))
     }
 
     public static func start(_ configuration: Configuration, port: Int = 0) async throws -> LocalProxyServer {
@@ -62,7 +78,7 @@ public final class LocalProxyServer: Sendable {
             }
             .bind(host: "127.0.0.1", port: port)
             .get()
-        return LocalProxyServer(authority: authority, channel: channel)
+        return LocalProxyServer(authority: authority, credentials: configuration.credentials, channel: channel)
     }
 
     public func stop() async {
@@ -100,13 +116,15 @@ final class ProxyFrontHandler: ChannelInboundHandler, RemovableChannelHandler, @
         let parts = lines[0].split(separator: " ", maxSplits: 2).map(String.init)
         guard parts.count == 3 else { return respond(context, "400 Bad Request") }
 
-        if let credentials = configuration.credentials {
-            let expected = "Basic " + Data("\(credentials.user):\(credentials.password)".utf8).base64EncodedString()
-            let provided = lines.dropFirst().first { $0.lowercased().hasPrefix("proxy-authorization:") }?
-                .dropFirst("proxy-authorization:".count).trimmingCharacters(in: .whitespaces)
-            guard provided == expected else {
-                return respond(context, "407 Proxy Authentication Required", extra: "Proxy-Authenticate: Basic realm=\"RutokenBrowser\"\r\n")
-            }
+        if let credentials = configuration.credentials,
+           !Self.authorized(headerLines: lines.dropFirst(), user: credentials.user, password: credentials.password) {
+            // RFC 7235: 407 + Proxy-Authenticate. The connection is closed; clients (CFNetwork) retry on a new
+            // one with the credentials. Reported as an event so a client that never authenticates is visible.
+            let target = Self.hostPort(parts[1], defaultPort: 443) ?? (parts[1], 0)
+            let sent = lines.dropFirst().contains { $0.lowercased().hasPrefix("proxy-authorization:") }
+            configuration.onEvent(.failed(host: target.0, port: target.1,
+                                          error: "407 proxy authentication required (\(sent ? "wrong credentials" : "no credentials"))"))
+            return respond(context, "407 Proxy Authentication Required", extra: "Proxy-Authenticate: Basic realm=\"RutokenBrowser\"\r\n")
         }
 
         if parts[0].uppercased() == "CONNECT" {
@@ -208,6 +226,31 @@ final class ProxyFrontHandler: ChannelInboundHandler, RemovableChannelHandler, @
         context.writeAndFlush(wrapOutboundOut(ByteBuffer(string: response))).whenComplete { _ in
             bound.value.close(promise: nil)
         }
+    }
+
+    /// Checks `Proxy-Authorization: Basic …` against the expected credentials in constant time.
+    static func authorized(headerLines: some Sequence<String>, user: String, password: String) -> Bool {
+        let expected = Array("\(user):\(password)".utf8)
+        var matched = false
+        for line in headerLines {
+            guard let colon = line.firstIndex(of: ":"),
+                  line[..<colon].trimmingCharacters(in: .whitespaces).lowercased() == "proxy-authorization" else { continue }
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            let pieces = value.split(separator: " ", maxSplits: 1)
+            guard pieces.count == 2, pieces[0].lowercased() == "basic",
+                  let decoded = Data(base64Encoded: pieces[1].trimmingCharacters(in: .whitespaces)) else { continue }
+            matched = constantTimeEquals(Array(decoded), expected) || matched
+        }
+        return matched
+    }
+
+    /// Time depends only on the lengths, not on where the bytes differ.
+    static func constantTimeEquals(_ a: [UInt8], _ b: [UInt8]) -> Bool {
+        var difference: UInt8 = a.count == b.count ? 0 : 1
+        for index in 0..<max(a.count, b.count) {
+            difference |= (index < a.count ? a[index] : 0) ^ (index < b.count ? b[index] : 0)
+        }
+        return difference == 0
     }
 
     static func hostPort(_ authority: String, defaultPort: Int) -> (String, Int)? {
