@@ -1,0 +1,7 @@
+// Signing and identifiers. Personal values (team, unique bundle id) go to Config/Local.xcconfig,
+// which is not committed; copy Config/Local.xcconfig.example to start.
+RB_BUNDLE_ID = com.example.RutokenBrowser
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+#include? "Local.xcconfig"

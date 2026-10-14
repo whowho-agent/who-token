@@ -1,0 +1,15 @@
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+Vendor/rutoken-sdk/
+stand/pki/
+App/Resources/stand-ca.pem
+RutokenBrowser.xcodeproj/
+Config/Local.xcconfig
+# Organization-specific certificates stay local
+App/ClientChain/*.pem
+App/TrustRoots/*.pem
+stand/ca/*.pem
+.DS_Store

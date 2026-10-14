@@ -1,0 +1,4 @@
+// Copy to Config/Local.xcconfig (ignored by git) and fill in.
+// Bundle ids must be unique per Apple team, a team-specific suffix avoids clashes.
+DEVELOPMENT_TEAM = ABCDE12345
+RB_BUNDLE_ID = com.example.RutokenBrowser.ABCDE12345

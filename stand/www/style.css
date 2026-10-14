@@ -1,0 +1,5 @@
+body { font: 16px -apple-system, system-ui, sans-serif; margin: 16px; color: #1d1d1f; background: #f5f5f7; }
+h1 { display: flex; gap: 8px; align-items: center; font-size: 22px; }
+h2 { font-size: 16px; margin-top: 24px; }
+pre { background: #fff; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+.ok { color: #1a7f37; } .fail { color: #cf222e; }

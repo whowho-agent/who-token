@@ -1,0 +1,224 @@
+import Foundation
+import NIOCore
+import NIOPosix
+import NIOSSL
+
+public enum ProxyEvent: Sendable {
+    /// Passthrough: bytes are relayed without decryption.
+    case tunnel(host: String, port: Int)
+    /// MITM with client authentication by the token.
+    case intercept(host: String, port: Int, withClientCertificate: Bool)
+    case failed(host: String, port: Int, error: String)
+}
+
+/// HTTP CONNECT proxy on 127.0.0.1 for WKWebView (`WKWebsiteDataStore.proxyConfigurations`).
+/// Hosts accepted by `shouldIntercept` are decrypted with a local CA and re-encrypted upstream with mTLS,
+/// everything else is tunnelled untouched.
+public final class LocalProxyServer: Sendable {
+    public struct Configuration: Sendable {
+        public var shouldIntercept: @Sendable (String) -> Bool
+        public var identityProvider: any ClientIdentityProvider
+        /// Extra roots for verifying intercepted servers, in addition to the system ones.
+        public var extraTrustRootsPEM: [Data]
+        /// `Proxy-Authorization: Basic` credentials required from clients; nil disables the check.
+        public var credentials: (user: String, password: String)?
+        public var onEvent: @Sendable (ProxyEvent) -> Void
+
+        public init(
+            shouldIntercept: @escaping @Sendable (String) -> Bool,
+            identityProvider: any ClientIdentityProvider,
+            extraTrustRootsPEM: [Data] = [],
+            credentials: (user: String, password: String)? = nil,
+            onEvent: @escaping @Sendable (ProxyEvent) -> Void = { _ in }
+        ) {
+            self.shouldIntercept = shouldIntercept
+            self.identityProvider = identityProvider
+            self.extraTrustRootsPEM = extraTrustRootsPEM
+            self.credentials = credentials
+            self.onEvent = onEvent
+        }
+    }
+
+    public let authority: MitmCertificateAuthority
+    private let channel: Channel
+
+    public var port: Int { channel.localAddress?.port ?? 0 }
+
+    private init(authority: MitmCertificateAuthority, channel: Channel) {
+        self.authority = authority
+        self.channel = channel
+    }
+
+    public static func start(_ configuration: Configuration, port: Int = 0) async throws -> LocalProxyServer {
+        let authority = try MitmCertificateAuthority()
+        let channel = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+            .childChannelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    try channel.pipeline.syncOperations.addHandler(
+                        ProxyFrontHandler(configuration: configuration, authority: authority)
+                    )
+                }
+            }
+            .bind(host: "127.0.0.1", port: port)
+            .get()
+        return LocalProxyServer(authority: authority, channel: channel)
+    }
+
+    public func stop() async {
+        try? await channel.close()
+    }
+}
+
+/// Reads the proxy request head, connects upstream and then turns the connection into a byte relay.
+final class ProxyFrontHandler: ChannelInboundHandler, RemovableChannelHandler, @unchecked Sendable {
+    typealias InboundIn = ByteBuffer
+    typealias OutboundOut = ByteBuffer
+
+    private let configuration: LocalProxyServer.Configuration
+    private let authority: MitmCertificateAuthority
+    private var head = ByteBuffer()
+    private var started = false
+
+    init(configuration: LocalProxyServer.Configuration, authority: MitmCertificateAuthority) {
+        self.configuration = configuration
+        self.authority = authority
+    }
+
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        guard !started else { return }
+        var buffer = unwrapInboundIn(data)
+        head.writeBuffer(&buffer)
+        let bytes = head.readableBytesView
+        guard let end = bytes.firstRange(of: Array("\r\n\r\n".utf8)) else {
+            if head.readableBytes > 16 * 1024 { respond(context, "431 Request Header Fields Too Large") }
+            return
+        }
+        started = true
+        let headText = String(decoding: bytes[bytes.startIndex..<end.lowerBound], as: UTF8.self)
+        let lines = headText.components(separatedBy: "\r\n")
+        let parts = lines[0].split(separator: " ", maxSplits: 2).map(String.init)
+        guard parts.count == 3 else { return respond(context, "400 Bad Request") }
+
+        if let credentials = configuration.credentials {
+            let expected = "Basic " + Data("\(credentials.user):\(credentials.password)".utf8).base64EncodedString()
+            let provided = lines.dropFirst().first { $0.lowercased().hasPrefix("proxy-authorization:") }?
+                .dropFirst("proxy-authorization:".count).trimmingCharacters(in: .whitespaces)
+            guard provided == expected else {
+                return respond(context, "407 Proxy Authentication Required", extra: "Proxy-Authenticate: Basic realm=\"RutokenBrowser\"\r\n")
+            }
+        }
+
+        if parts[0].uppercased() == "CONNECT" {
+            guard let (host, port) = Self.hostPort(parts[1], defaultPort: 443) else { return respond(context, "400 Bad Request") }
+            connect(context: context, host: host, port: port, intercept: configuration.shouldIntercept(host), forward: nil)
+        } else if let url = URL(string: parts[1]), url.scheme == "http", let host = url.host() {
+            // Plain HTTP in absolute form: relay the request as is (servers must accept absolute-form).
+            var forward = head
+            forward.moveReaderIndex(to: 0)
+            connect(context: context, host: host, port: url.port ?? 80, intercept: false, forward: forward)
+        } else {
+            respond(context, "400 Bad Request")
+        }
+    }
+
+    private func connect(context: ChannelHandlerContext, host: String, port: Int, intercept: Bool, forward: ByteBuffer?) {
+        let loop = context.eventLoop
+        let contextBox = NIOLoopBound(context, eventLoop: loop)
+        let (frontGlue, upstreamGlue) = GlueHandler.matchedPair()
+        let configuration = configuration
+        let authority = authority
+
+        let promise = loop.makePromise(of: (Channel, Bool).self)
+        promise.completeWithTask {
+            let identity = intercept ? try await configuration.identityProvider.identity(for: host) : nil
+            let upstreamContext = intercept
+                ? try UpstreamTLS.context(identity: identity, extraTrustRootsPEM: configuration.extraTrustRootsPEM)
+                : nil
+            let hasIdentity = identity != nil
+            let serverHostname = UpstreamTLS.serverHostname(host)
+            let channel = try await ClientBootstrap(group: loop)
+                .connectTimeout(.seconds(15))
+                .channelInitializer { channel in
+                    channel.eventLoop.makeCompletedFuture {
+                        if let upstreamContext {
+                            try channel.pipeline.syncOperations.addHandler(
+                                NIOSSLClientHandler(context: upstreamContext, serverHostname: serverHostname)
+                            )
+                        }
+                        try channel.pipeline.syncOperations.addHandler(upstreamGlue)
+                    }
+                }
+                .connect(host: host, port: port)
+                .get()
+            return (channel, hasIdentity)
+        }
+
+        promise.futureResult.whenComplete { result in
+            let context = contextBox.value
+            switch result {
+            case .failure(let error):
+                configuration.onEvent(.failed(host: host, port: port, error: String(describing: error)))
+                self.respond(context, "502 Bad Gateway")
+            case .success(let (upstream, hasIdentity)):
+                if let forward {
+                    configuration.onEvent(.tunnel(host: host, port: port))
+                    self.becomeRelay(context, glue: frontGlue, tls: nil, initial: forward)
+                    return
+                }
+                let tls: NIOSSLServerHandler?
+                if intercept {
+                    do {
+                        tls = NIOSSLServerHandler(context: try authority.serverContext(for: host))
+                    } catch {
+                        configuration.onEvent(.failed(host: host, port: port, error: String(describing: error)))
+                        upstream.close(promise: nil)
+                        return self.respond(context, "502 Bad Gateway")
+                    }
+                    configuration.onEvent(.intercept(host: host, port: port, withClientCertificate: hasIdentity))
+                } else {
+                    tls = nil
+                    configuration.onEvent(.tunnel(host: host, port: port))
+                }
+                let bound = NIOLoopBound((context, tls), eventLoop: loop)
+                context.writeAndFlush(self.wrapOutboundOut(ByteBuffer(string: "HTTP/1.1 200 Connection Established\r\n\r\n")))
+                    .whenSuccess { self.becomeRelay(bound.value.0, glue: frontGlue, tls: bound.value.1, initial: nil) }
+            }
+        }
+    }
+
+    /// Replaces this handler with (optional TLS termination +) the glue towards upstream.
+    private func becomeRelay(_ context: ChannelHandlerContext, glue: GlueHandler, tls: NIOSSLServerHandler?, initial: ByteBuffer?) {
+        do {
+            if let tls { try context.pipeline.syncOperations.addHandler(tls, position: .first) }
+            try context.pipeline.syncOperations.addHandler(glue)
+            context.pipeline.syncOperations.removeHandler(context: context, promise: nil)
+            if let initial {
+                context.pipeline.syncOperations.fireChannelRead(NIOAny(initial))
+                context.pipeline.syncOperations.fireChannelReadComplete()
+            }
+        } catch {
+            context.close(promise: nil)
+        }
+    }
+
+    private func respond(_ context: ChannelHandlerContext, _ status: String, extra: String = "") {
+        let response = "HTTP/1.1 \(status)\r\n\(extra)Content-Length: 0\r\nConnection: close\r\n\r\n"
+        let bound = NIOLoopBound(context, eventLoop: context.eventLoop)
+        context.writeAndFlush(wrapOutboundOut(ByteBuffer(string: response))).whenComplete { _ in
+            bound.value.close(promise: nil)
+        }
+    }
+
+    static func hostPort(_ authority: String, defaultPort: Int) -> (String, Int)? {
+        // [v6]:port, host:port or host
+        if authority.hasPrefix("["), let close = authority.firstIndex(of: "]") {
+            let host = String(authority[authority.index(after: authority.startIndex)..<close])
+            let portPart = authority[authority.index(after: close)...].dropFirst()
+            return (host, Int(portPart) ?? defaultPort)
+        }
+        let pieces = authority.split(separator: ":", omittingEmptySubsequences: false)
+        guard let host = pieces.first, !host.isEmpty else { return nil }
+        return (String(host), pieces.count > 1 ? Int(pieces[1]) ?? defaultPort : defaultPort)
+    }
+}
