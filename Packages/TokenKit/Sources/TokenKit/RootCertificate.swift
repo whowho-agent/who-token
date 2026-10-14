@@ -123,6 +123,19 @@ public enum RootCertificateFinder {
         throw RootCertificateError.rootNotFound
     }
 
+    /// Whether iOS trusts the site's server certificate as is (system and user-trusted roots),
+    /// i.e. Safari opens it without a certificate warning.
+    public static func isTrustedBySystem(siteAddress: String) async throws -> Bool {
+        guard let (host, port) = parse(siteAddress) else { throw RootCertificateError.invalidHost }
+        let chain = try await ServerChainFetcher.chain(host: host, port: port)
+        let certificates = chain.compactMap { SecCertificateCreateWithData(nil, $0 as CFData) }
+        var trust: SecTrust?
+        guard SecTrustCreateWithCertificates(certificates as CFArray, SecPolicyCreateSSL(true, host as CFString), &trust) == errSecSuccess,
+              let trust else { return false }
+        SecTrustSetNetworkFetchAllowed(trust, true)
+        return SecTrustEvaluateWithError(trust, nil)
+    }
+
     static func parse(_ address: String) -> (String, Int)? {
         var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.contains("://") { text = "https://" + text }

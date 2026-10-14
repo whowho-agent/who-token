@@ -108,9 +108,19 @@ struct RootCertificateView: View {
                 Button("Отпечаток совпадает — загрузить профиль", systemImage: "arrow.down.doc") {
                     Task { await model.offerProfile() }
                 }
+                if model.profileOffered {
+                    Button("Профиль установлен — включить доверие", systemImage: "checkmark.shield") {
+                        // No public link to Certificate Trust Settings; the prefs URL works on current iOS,
+                        // otherwise Settings opens at the app.
+                        let trust = URL(string: "App-prefs:General&path=About/CERT_TRUST_SETTINGS")!
+                        UIApplication.shared.open(trust) { opened in
+                            if !opened { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+                        }
+                    }
+                }
             } footer: {
                 if model.profileOffered {
-                    Text("В Safari разрешите загрузку профиля, затем: Настройки → «Профиль загружен» → «Установить». После установки включите доверие: Настройки → Основные → Об этом устройстве → Доверие сертификатам.")
+                    Text("В Safari разрешите загрузку профиля, затем: Настройки → «Профиль загружен» → «Установить». После установки нажмите «включить доверие» (Настройки → Основные → Об этом устройстве → Доверие сертификатам) и включите переключатель у сертификата.")
                 } else {
                     Text("Откроется Safari и предложит загрузить профиль конфигурации.")
                 }

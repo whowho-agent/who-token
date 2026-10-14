@@ -145,3 +145,25 @@ public enum SharedPin {
         SharedKeychain.delete(account: failureAccount)
     }
 }
+
+/// What the Safari extension reports about itself (the app can't query site access on its own).
+public enum SafariExtensionReport {
+    private static let account = "safari-extension-report"
+
+    public struct Report: Sendable {
+        public let date: Date
+        /// The extension may read pages on all https sites, needed to notice failed sign-ins.
+        public let allSitesAllowed: Bool
+    }
+
+    public static func store(allSitesAllowed: Bool, now: Date = .now) {
+        SharedKeychain.set(Data("\(now.timeIntervalSince1970)|\(allSitesAllowed ? 1 : 0)".utf8), account: account)
+    }
+
+    public static var latest: Report? {
+        guard let raw = SharedKeychain.get(account: account).map({ String(decoding: $0, as: UTF8.self) }) else { return nil }
+        let parts = raw.split(separator: "|")
+        guard parts.count == 2, let seconds = TimeInterval(parts[0]) else { return nil }
+        return Report(date: Date(timeIntervalSince1970: seconds), allSitesAllowed: parts[1] == "1")
+    }
+}

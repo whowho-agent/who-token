@@ -74,5 +74,19 @@ document.getElementById('root').addEventListener('click', async () => {
   window.close();
 });
 
+// All-sites access lets the background script notice sign-ins that failed for lack of a PIN.
+const access = document.getElementById('access');
+const allSites = { origins: ['https://*/*'] };
+async function checkAccess() {
+  const granted = await browser.permissions.contains(allSites).catch(() => true);
+  access.hidden = granted;
+}
+document.getElementById('grant').addEventListener('click', async () => {
+  await browser.permissions.request(allSites).catch(() => {});
+  await checkAccess();
+  browser.runtime.sendMessage({ type: 'permissionsChanged' }).catch(() => {});
+});
+
 refresh();
+checkAccess();
 pinInput.focus();

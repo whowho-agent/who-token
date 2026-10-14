@@ -1,6 +1,8 @@
 import Foundation
 import Observation
+import SafariServices
 import TokenKit
+import UIKit
 
 struct ConnectedToken: Identifiable {
     var id: UInt { info.slot }
@@ -19,6 +21,18 @@ final class SetupModel {
     private(set) var isBusy = false
     private(set) var message: Message?
     private(set) var extensionLog: [String] = []
+
+    // MARK: Readiness checklist
+
+    /// nil when unknown (iOS before 26.2 can't tell).
+    private(set) var safariExtensionEnabled: Bool?
+    private(set) var extensionReport: SafariExtensionReport.Report?
+    /// A site of the organization, checked to see whether its root certificate is trusted on this device.
+    var workSite = UserDefaults.standard.string(forKey: "workSite") ?? "" {
+        didSet { UserDefaults.standard.set(workSite, forKey: "workSite") }
+    }
+    private(set) var workSiteTrusted: Bool?
+    private(set) var isCheckingWorkSite = false
 
     struct Message: Equatable {
         let text: String
@@ -53,6 +67,7 @@ final class SetupModel {
     }
 
     func refresh() async {
+        await refreshReadiness()
         registeredSerials = SystemTokenRegistry.registeredSerialNumbers
         pinExpiry = SharedPin.load() != nil ? SharedPin.expiry : nil
         #if DEBUG
@@ -115,6 +130,59 @@ final class SetupModel {
         show("PIN удалён", isError: false)
         await refresh()
     }
+
+    func refreshReadiness() async {
+        extensionReport = SafariExtensionReport.latest
+        if #available(iOS 26.2, *) {
+            safariExtensionEnabled = try? await SFSafariExtensionManager.stateOfExtension(withIdentifier: Self.safariExtensionID).isEnabled
+        } else {
+            // Without the API, a recent report from the extension means it is enabled.
+            safariExtensionEnabled = extensionReport.map { _ in true }
+        }
+        await checkWorkSite()
+    }
+
+    func checkWorkSite() async {
+        let site = workSite.trimmingCharacters(in: .whitespaces)
+        guard !site.isEmpty else {
+            workSiteTrusted = nil
+            return
+        }
+        isCheckingWorkSite = true
+        defer { isCheckingWorkSite = false }
+        workSiteTrusted = try? await RootCertificateFinder.isTrustedBySystem(siteAddress: site)
+    }
+
+    /// Opens Settings → Apps → Safari → Extensions → Рутокен (iOS 26.2+), otherwise the app's settings.
+    func openSafariExtensionSettings() {
+        if #available(iOS 26.2, *) {
+            SFSafariSettings.openExtensionsSettings(forIdentifiers: [Self.safariExtensionID]) { error in
+                if error != nil { Self.openAppSettings() }
+            }
+        } else {
+            Self.openAppSettings()
+        }
+    }
+
+    /// Settings → General → About → Certificate Trust Settings. There is no public link; the private
+    /// prefs URL works on current iOS versions, otherwise Settings opens at the app.
+    func openCertificateTrustSettings() {
+        let url = URL(string: "App-prefs:General&path=About/CERT_TRUST_SETTINGS")!
+        UIApplication.shared.open(url) { opened in
+            if !opened { Self.openAppSettings() }
+        }
+    }
+
+    private static func openAppSettings() {
+        UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+    }
+
+    /// Read from the embedded extension: re-signing may change bundle ids.
+    static let safariExtensionID: String = {
+        Bundle.main.builtInPlugInsURL
+            .flatMap { Bundle(url: $0.appending(path: "RutokenSafariExtension.appex")) }?
+            .bundleIdentifier ?? (Bundle.main.bundleIdentifier ?? "") + ".SafariExtension"
+    }()
 
     func clearExtensionLog() {
         ExtensionLog.clear()

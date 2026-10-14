@@ -44,6 +44,8 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 SharedPin.clearFailure()
                 ExtensionLog.append("safari: PIN entered in Safari popup")
             }
+        case "heartbeat":
+            SafariExtensionReport.store(allSitesAllowed: message["allSites"] as? Bool ?? false)
         case "log":
             #if DEBUG
             ExtensionLog.append("safari js: \(message["text"] as? String ?? "")")

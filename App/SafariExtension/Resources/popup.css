@@ -12,3 +12,5 @@ button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 0; backgr
 #forget, #back, .link { margin-top: 12px; background: transparent; color: #d62d2d; padding: 0; display: block; }
 .hint { color: #888; font-size: 12px; margin-top: 16px; }
 body.page .hint { font-size: 14px; }
+#access { font-size: 13px; }
+.warn { color: #c62828; }

@@ -8,6 +8,7 @@ struct SetupView: View {
     /// Site whose root certificate to look up, set by the toolbar link or a `rutoken://root?site=` URL
     /// from the Safari extension.
     @State private var rootSite: RootSite?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -18,6 +19,7 @@ struct SetupView: View {
                             .foregroundStyle(message.isError ? .red : .green)
                     }
                 }
+                ReadinessSection(model: model) { site in rootSite = RootSite(address: site) }
                 tokenSection
                 safariSection
                 pinSection
@@ -31,6 +33,10 @@ struct SetupView: View {
             .refreshable { await model.refresh() }
             .overlay { if model.isBusy { ProgressView().controlSize(.large) } }
             .task { await model.start() }
+            // Coming back from Settings (extension switched on, profile installed): re-check.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await model.refresh() } }
+            }
             .navigationDestination(item: $rootSite) { site in
                 RootCertificateView(model: RootCertificateModel(address: site.address))
             }

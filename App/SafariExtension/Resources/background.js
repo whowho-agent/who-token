@@ -58,7 +58,24 @@ api.webNavigation.onErrorOccurred.addListener(async (details) => {
   await api.tabs.remove(details.tabId).catch(() => {});
 });
 
-api.tabs.onActivated.addListener(() => updateBadge());
-api.webNavigation.onCompleted.addListener((details) => { if (details.frameId === 0) updateBadge(); });
-api.runtime.onMessage.addListener((message) => { if (message?.type === 'pinChanged') updateBadge(); });
+/** Tells the app the extension is enabled and whether it may read all https sites (for its checklist). */
+let lastHeartbeat = 0;
+async function heartbeat() {
+  if (Date.now() - lastHeartbeat < 30 * 1000) return;
+  lastHeartbeat = Date.now();
+  const allSites = await api.permissions.contains({ origins: ['https://*/*'] }).catch(() => false);
+  api.runtime.sendNativeMessage('application.id', { action: 'heartbeat', allSites }).catch(() => {});
+}
+
+api.tabs.onActivated.addListener(() => { updateBadge(); heartbeat(); });
+api.webNavigation.onCompleted.addListener((details) => {
+  if (details.frameId !== 0) return;
+  updateBadge();
+  heartbeat();
+});
+api.runtime.onMessage.addListener((message) => {
+  if (message?.type === 'pinChanged') updateBadge();
+  if (message?.type === 'permissionsChanged') { lastHeartbeat = 0; heartbeat(); }
+});
 updateBadge();
+heartbeat();
