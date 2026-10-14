@@ -64,6 +64,22 @@ targets:
         # A free (personal) team cannot sign the NFC entitlement. With a paid team set:
         # CODE_SIGN_ENTITLEMENTS: App/RutokenBrowser.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
+    scheme:
+      testTargets: [RutokenBrowserTests]
+
+  # Unit tests for the app's pure logic (error page mapping). Not hosted: the sources are compiled
+  # into the bundle directly, so the tests need neither the app, WebKit nor a token.
+  RutokenBrowserTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - App/Tests
+      - App/Sources/Browser/BrowserError.swift
+      - App/Sources/Browser/IdentityStatus.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(RB_BUNDLE_ID).Tests
+        GENERATE_INFOPLIST_FILE: YES
 
   RutokenTokenExtension:
     type: app-extension
