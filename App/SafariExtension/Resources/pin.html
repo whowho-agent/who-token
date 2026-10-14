@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Рутокен</title>
+  <link rel="stylesheet" href="popup.css">
+  <script type="module" src="popup.js"></script>
+</head>
+<body>
+  <h1><img src="images/icon-48.png" alt="" width="24" height="24"> Рутокен</h1>
+  <p id="intro" hidden>Сайт <b id="site"></b> запрашивает сертификат с токена.</p>
+  <p id="status">Проверяем…</p>
+  <form id="pin-form">
+    <input id="pin" type="password" autocomplete="off" autocapitalize="off" autocorrect="off"
+           spellcheck="false" placeholder="PIN пользователя" enterkeyhint="go">
+    <button type="submit">Войти</button>
+  </form>
+  <button id="forget" type="button" hidden>Забыть PIN</button>
+  <button id="back" type="button" hidden>Открыть сайт</button>
+  <p class="hint">Убедитесь, что USB-токен подключён. PIN хранится на устройстве 24 часа и используется
+    для подписи при входе на сайты по сертификату с токена.</p>
+</body>
+</html>

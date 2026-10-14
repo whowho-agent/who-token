@@ -89,6 +89,8 @@ targets:
         buildPhase: resources
       - path: App/SafariExtension/Resources/background.js
         buildPhase: resources
+      - path: App/SafariExtension/Resources/pin.html
+        buildPhase: resources
       - path: App/SafariExtension/Resources/images
         type: folder
         buildPhase: resources

@@ -9,7 +9,7 @@ struct RutokenApp: App {
         let readerMonitor = ReaderMonitor()
         #if DEBUG
         // Extension diagnostics: their log lives in the shared keychain.
-        AppLog.write("[extension log at launch]\n" + ExtensionLog.read().suffix(30).joined(separator: "\n"))
+        AppLog.write("[extension log at launch]\n" + ExtensionLog.read().suffix(300).joined(separator: "\n"))
         #endif
         _setup = State(initialValue: SetupModel(service: try? TokenService(), readerMonitor: readerMonitor))
     }

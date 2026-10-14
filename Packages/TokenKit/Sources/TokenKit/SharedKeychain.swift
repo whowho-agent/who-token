@@ -49,8 +49,10 @@ public enum ExtensionLog {
     private static let account = "extension-log"
 
     public static func append(_ line: String) {
+        // Safari retries a failed signature dozens of times per second; keep one line per message run.
+        if let last = read().last, last.hasSuffix(" " + line) { return }
         let stamp = Date().formatted(date: .omitted, time: .standard)
-        let lines = (read() + ["\(stamp) \(line)"]).suffix(40)
+        let lines = (read() + ["\(stamp) \(line)"]).suffix(300)
         SharedKeychain.set(Data(lines.joined(separator: "\n").utf8), account: account)
     }
 

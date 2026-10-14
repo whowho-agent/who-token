@@ -17,6 +17,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 SharedPin.clearFailure()
                 ExtensionLog.append("safari: PIN entered in Safari popup")
             }
+        case "log":
+            #if DEBUG
+            ExtensionLog.append("safari js: \(message["text"] as? String ?? "")")
+            #endif
         case "clearPin":
             SharedPin.clear()
             ExtensionLog.append("safari: PIN cleared from Safari popup")

@@ -7,6 +7,11 @@ const FAILURE_WINDOW = 60;
 /** Don't replace the same site's error page again sooner than this (ms). */
 const PROMPT_INTERVAL = 60 * 1000;
 
+/** Diagnostics (kept by the native side in Debug builds only): token problems per site. */
+function log(text) {
+  api.runtime.sendNativeMessage('application.id', { action: 'log', text }).catch(() => {});
+}
+
 async function nativeStatus() {
   try {
     return await api.runtime.sendNativeMessage('application.id', { action: 'status' });
@@ -44,9 +49,13 @@ api.webNavigation.onErrorOccurred.addListener(async (details) => {
   if (last && Date.now() - last < PROMPT_INTERVAL) return;
   await api.storage.local.set({ [key]: Date.now() });
 
-  const page = api.runtime.getURL('popup.html') +
+  log(`token needed for ${host}: ${problem}`);
+  const page = api.runtime.getURL('pin.html') +
     `?page=1&return=${encodeURIComponent(details.url)}&reason=${encodeURIComponent(problem)}`;
-  await api.tabs.update(details.tabId, { url: page });
+  // Safari won't show an extension page in place of its own error page, so open a new tab and close
+  // the failed one: after the PIN the new tab goes on to the original address.
+  await api.tabs.create({ url: page });
+  await api.tabs.remove(details.tabId).catch(() => {});
 });
 
 api.tabs.onActivated.addListener(() => updateBadge());
