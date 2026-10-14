@@ -43,17 +43,21 @@ public enum SharedKeychain {
     }
 }
 
-/// Spike diagnostics: the extension runs in its own process, so it leaves a short event log
+/// Diagnostics: the extensions run in their own processes, so they leave a short event log
 /// in the shared keychain for the app to display.
 public enum ExtensionLog {
     private static let account = "extension-log"
 
-    public static func append(_ line: String) {
+    /// Debug builds only: Release writes nothing (lines may contain host names and token state).
+    public static func append(_ line: @autoclosure () -> String) {
+        #if DEBUG
+        let line = line()
         // Safari retries a failed signature dozens of times per second; keep one line per message run.
         if let last = read().last, last.hasSuffix(" " + line) { return }
         let stamp = Date().formatted(date: .omitted, time: .standard)
         let lines = (read() + ["\(stamp) \(line)"]).suffix(300)
         SharedKeychain.set(Data(lines.joined(separator: "\n").utf8), account: account)
+        #endif
     }
 
     public static func read() -> [String] {

@@ -13,3 +13,4 @@ stand/ca/*.pem
 .claude/
 stand/ca/*.cer
 stand/ca/*.mobileconfig
+dist/
