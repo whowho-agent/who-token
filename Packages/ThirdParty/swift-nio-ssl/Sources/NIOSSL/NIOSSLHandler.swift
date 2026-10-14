@@ -51,7 +51,7 @@ public class NIOSSLHandler: ChannelInboundHandler, ChannelOutboundHandler, Remov
     }
 
     private var state: ConnectionState = .idle
-    private var connection: SSLConnection
+    internal var connection: SSLConnection  // PATCH: was private, see ClientSessionResumption.swift
     private var plaintextReadBuffer: ByteBuffer?
     private var bufferedActions: MarkedCircularBuffer<BufferedAction>
     private var closeOutputPromise: EventLoopPromise<Void>?

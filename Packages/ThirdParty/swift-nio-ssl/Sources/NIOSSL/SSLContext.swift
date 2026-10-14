@@ -481,6 +481,8 @@ public final class NIOSSLContext {
             self.keyLogManager = nil
         }
 
+        NIOSSLContext.setClientSessionCallback(context: context)  // PATCH: client session resumption
+
         self.sslContext = context
         self.configuration = configuration
         self.callbackManager = callbackManager

@@ -41,7 +41,7 @@ enum AsyncOperationResult<T> {
 /// framing required by TLS. It also records the configuration and parent `NIOSSLContext` object
 /// used to create the connection.
 internal final class SSLConnection {
-    private let ssl: OpaquePointer
+    internal let ssl: OpaquePointer  // PATCH: was private, see ClientSessionResumption.swift
     internal let parentContext: NIOSSLContext
     private var bio: ByteBufferBIO?
     internal var expectedHostname: String?
@@ -55,6 +55,7 @@ internal final class SSLConnection {
     internal var customPrivateKeyResult: Result<ByteBuffer, Error>?
     internal var customContextManager: CustomContextManager?
     internal var currentOverride: NIOSSLContextConfigurationOverride?
+    internal var newSessionCallback: NIOSSLClientSessionCallback?  // PATCH: client session resumption
 
     /// Whether certificate hostnames should be validated.
     var validateHostnames: Bool {
