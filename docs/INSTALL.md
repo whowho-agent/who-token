@@ -39,8 +39,9 @@
 ## Способ 2. Sideloadly (Mac или Windows)
 
 Нужен файл **`Rutoken-unsigned.ipa`** — нейтральная сборка без чьей-либо подписи (bundle id
-`com.example.RutokenSafari`). Её собирает `tools/build-neutral-ipa.sh`; возьмите её у того, кто собирает,
-или со страницы Releases репозитория. Обычная `Rutoken.ipa`, подписанная чужим Apple ID, не подойдёт.
+`com.example.RutokenSafari`). Готовая лежит в репозитории: [`releases/`](../releases/) (рядом — контрольная
+сумма `.sha256`); пересобрать можно скриптом `tools/build-neutral-ipa.sh`. Обычная `Rutoken.ipa`,
+подписанная чужим Apple ID, не подойдёт.
 
 1. Скачайте Sideloadly с официального сайта `sideloadly.io` и установите. На Windows также нужны iTunes и
    iCloud в версиях **с сайта Apple**, не из Microsoft Store.
