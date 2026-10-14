@@ -34,6 +34,12 @@ final class BrowserModel {
     private(set) var identityProvider: TokenIdentityProvider?
     /// Latest token-related problem per host, for error pages.
     private(set) var identityIssues: [String: IdentityStatus] = [:]
+    private var identityIssueDates: [String: Date] = [:]
+    /// Latest `ProxyEvent.failed` per host, for error pages.
+    private(set) var proxyFailures: [String: ProxyFailure] = [:]
+    /// Persistent, so sign-ins (cookies, local storage) survive app restarts. A dedicated store rather than
+    /// `.default()` keeps the proxy settings and «Очистить данные сайтов» scoped to this browser.
+    let dataStore = WKWebsiteDataStore(forIdentifier: BrowserModel.dataStoreID)
     private let interceptHosts: OSAllocatedUnfairLock<Set<String>>
     private let service: TokenService?
     private let prompter: PinPrompter
@@ -106,12 +112,55 @@ final class BrowserModel {
     private func record(_ status: IdentityStatus) {
         switch status {
         case .tokenMissing(let host), .noCertificate(let host), .pinCancelled(let host):
-            identityIssues[host] = status
+            identityIssues[host.lowercased()] = status
+            identityIssueDates[host.lowercased()] = .now
         case .loginFailed(let host, _):
-            identityIssues[host] = status
+            identityIssues[host.lowercased()] = status
+            identityIssueDates[host.lowercased()] = .now
         case .signedIn:
             identityIssues.removeAll()
+            identityIssueDates.removeAll()
         }
+    }
+
+    // MARK: Error pages
+
+    /// Issues older than this before the failure belong to an earlier attempt.
+    private static let issueWindow: TimeInterval = 30
+
+    /// Error page for a failed navigation. Read from the view, so a token or proxy event that arrives
+    /// just after WebKit reports the failure still updates the page.
+    func browserError(for failure: NavigationFailure) -> BrowserError? {
+        let host = failure.host
+        let since = failure.date.addingTimeInterval(-Self.issueWindow)
+        let issue = identityIssueDates[host].flatMap { $0 >= since ? identityIssues[host] : nil }
+        let proxyError = proxyFailures[host].flatMap { $0.date >= since ? $0.error : nil }
+        return BrowserError.from(issue: issue, proxyError: proxyError, urlError: failure.error, isTokenHost: isIntercepted(host))
+    }
+
+    /// A page from this host loaded, so its earlier problems are resolved.
+    func navigationSucceeded(host: String) {
+        let host = host.lowercased()
+        identityIssues[host] = nil
+        identityIssueDates[host] = nil
+        proxyFailures[host] = nil
+    }
+
+    // MARK: Settings actions
+
+    /// Logs out of the token; the next site that asks for the certificate prompts for the PIN again.
+    func forgetTokenLogin() async {
+        await identityProvider?.forgetLogin()
+        log("вход на токен сброшен")
+    }
+
+    /// Removes cookies, caches and storage of all sites (signs out everywhere).
+    func clearWebsiteData() async {
+        await dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+        identityIssues.removeAll()
+        identityIssueDates.removeAll()
+        proxyFailures.removeAll()
+        log("данные сайтов очищены")
     }
 
     private func record(_ event: ProxyEvent) {
@@ -119,13 +168,17 @@ final class BrowserModel {
         case .tunnel(let host, let port): log("туннель \(host):\(port)")
         case .intercept(let host, let port, let withCertificate):
             log("перехват \(host):\(port), клиентский сертификат: \(withCertificate ? "токен" : "нет")")
-        case .failed(let host, let port, let error): log("ошибка \(host):\(port): \(error)")
+        case .failed(let host, let port, let error):
+            proxyFailures[host.lowercased()] = ProxyFailure(error: error, date: .now)
+            log("ошибка \(host):\(port): \(error)")
         }
     }
 
     private nonisolated static func parse(_ text: String) -> Set<String> {
-        Set(text.split(whereSeparator: { $0 == "," || $0 == " " }).map { $0.lowercased() })
+        Set(text.split(whereSeparator: { $0 == "," || $0.isWhitespace }).map { $0.lowercased() })
     }
+
+    private static let dataStoreID = UUID(uuidString: "6B1F2C3A-8E4D-4F5A-9C7B-2D1E0F3A4B5C")!
 
     /// Organization roots for verifying intercepted servers (App/TrustRoots/*.pem, kept out of git).
     private static let bundledTrustRoots: [Data] = (Bundle.main.urls(forResourcesWithExtension: "pem", subdirectory: "TrustRoots") ?? [])
@@ -135,4 +188,18 @@ final class BrowserModel {
     private static let standCA: [Data] = Bundle.main.url(forResource: "stand-ca", withExtension: "pem")
         .flatMap { try? Data(contentsOf: $0) }
         .map { [$0] } ?? []
+}
+
+struct ProxyFailure: Equatable {
+    let error: String
+    let date: Date
+}
+
+/// A main-frame navigation that failed; the error page is derived from it and the model's recent issues.
+struct NavigationFailure: Equatable {
+    let url: URL
+    let error: NSError
+    let date: Date
+
+    var host: String { url.host()?.lowercased() ?? "" }
 }
