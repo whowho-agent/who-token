@@ -6,7 +6,7 @@ import WebKit
 struct BrowserView: View {
     @Bindable var model: BrowserModel
     @State private var page = PageState()
-    @State private var showDiagnostics = false
+    @State private var showSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +26,15 @@ struct BrowserView: View {
                 .opacity(page.progress < 1 ? 1 : 0)
 
             if let port = model.proxyPort, let proxy = model.proxy {
-                WebView(model: model, page: page, proxyPort: port, proxyCA: proxy.authority.caCertificateDER)
+                ZStack {
+                    WebView(model: model, page: page, proxyPort: port, proxyCA: proxy.authority.caCertificateDER)
+                    // Overlays keep the web view alive underneath, with its history and popups.
+                    if let failure = page.failure, let error = model.browserError(for: failure) {
+                        ErrorPageView(error: error, host: failure.url.host() ?? "", retry: retry) { showSettings = true }
+                    } else if !page.hasStarted && model.address.isEmpty {
+                        BrowserEmptyState { showSettings = true }
+                    }
+                }
             } else {
                 ContentUnavailableView(model.status, systemImage: "network.slash")
             }
@@ -36,18 +44,21 @@ struct BrowserView: View {
                 Button("Назад", systemImage: "chevron.backward") { page.webView?.goBack() }.disabled(!page.canGoBack)
                 Button("Вперёд", systemImage: "chevron.forward") { page.webView?.goForward() }.disabled(!page.canGoForward)
                 Spacer()
-                Button("Обновить", systemImage: "arrow.clockwise") { page.webView?.reload() }
+                Button("Обновить", systemImage: "arrow.clockwise", action: retry)
                 Button(model.desktopMode ? "Мобильная версия" : "Версия для компьютера",
                        systemImage: model.desktopMode ? "desktopcomputer.trianglebadge.exclamationmark" : "desktopcomputer") {
                     model.desktopMode.toggle()
-                    page.webView?.customUserAgent = model.desktopMode ? desktopUserAgent() : nil
-                    page.webView?.reload()
                 }
                 .tint(model.desktopMode ? .accentColor : .secondary)
-                Button("Диагностика", systemImage: "stethoscope") { showDiagnostics = true }
+                Button("Настройки", systemImage: "gearshape") { showSettings = true }
             }
         }
-        .sheet(isPresented: $showDiagnostics) { DiagnosticsView(model: model) }
+        // Applies both the toolbar button and the settings toggle.
+        .onChange(of: model.desktopMode) {
+            page.webView?.customUserAgent = model.desktopMode ? desktopUserAgent() : nil
+            page.webView?.reload()
+        }
+        .sheet(isPresented: $showSettings) { SettingsView(model: model) }
         .sheet(item: $page.popup) { popup in
             NavigationStack {
                 PopupView(webView: popup.webView)
@@ -61,6 +72,16 @@ struct BrowserView: View {
         }
         .task { await model.start() }
     }
+
+    /// After a failed provisional navigation `reload()` would reload the previous page, so load the failed URL.
+    private func retry() {
+        if let failure = page.failure {
+            page.failure = nil
+            page.webView?.load(URLRequest(url: failure.url))
+        } else {
+            page.webView?.reload()
+        }
+    }
 }
 
 @MainActor @Observable
@@ -70,6 +91,10 @@ final class PageState {
     var canGoBack = false
     var canGoForward = false
     var isIntercepted = false
+    /// Any main-frame navigation has started; until then an empty address shows the first-launch hint.
+    var hasStarted = false
+    /// The last main-frame navigation failed; shown as a native error page.
+    var failure: NavigationFailure?
     /// Window opened by `window.open` (e.g. SAML sign-in); it must stay linked to its opener.
     var popup: Popup?
 }
@@ -95,7 +120,9 @@ private struct WebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        let store = WKWebsiteDataStore.nonPersistent()
+        // Persistent store (sign-ins survive restarts). The proxy port changes every launch,
+        // so the proxy is set on it here each time, before the first load.
+        let store = model.dataStore
         // All WebKit traffic goes through the in-app proxy (iOS 17+).
         store.proxyConfigurations = [ProxyConfiguration(
             httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(integerLiteral: UInt16(proxyPort)))
@@ -239,51 +266,37 @@ private struct WebView: UIViewRepresentable {
             return .allow
         }
 
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            guard webView === page.webView else { return }
+            page.hasStarted = true
+            page.failure = nil
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             model.log("страница загружена: \(webView.url?.absoluteString ?? "")")
+            guard webView === page.webView else { return }
+            page.failure = nil
+            if let host = webView.url?.host() { model.navigationSucceeded(host: host) }
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             model.log("ошибка загрузки: \(error.localizedDescription)")
+            showFailure(error, in: webView)
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             model.log("ошибка: \(error.localizedDescription)")
+            showFailure(error, in: webView)
         }
-    }
-}
 
-private struct DiagnosticsView: View {
-    @Bindable var model: BrowserModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("host1, *.example.com", text: $model.tokenHosts)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } header: {
-                    Text("Сайты с входом по токену")
-                } footer: {
-                    Text("Трафик этих хостов (можно *.домен) расшифровывается в приложении и отправляется на сервер с сертификатом с токена; PIN спрашивается, только если сервер запросил сертификат. Остальные сайты идут напрямую через туннель.")
-                }
-                Section("Состояние") {
-                    Text(model.status)
-                    ForEach(model.trustChallenges.sorted(by: { $0.key < $1.key }), id: \.key) { host, count in
-                        LabeledContent(host, value: "проверок сервера: \(count)")
-                    }
-                }
-                Section("События") {
-                    ForEach(Array(model.events.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.system(size: 11, design: .monospaced))
-                    }
-                }
-            }
-            .navigationTitle("Диагностика")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+        /// Main window only: a popup failing must not cover the opener's page.
+        private func showFailure(_ error: Error, in webView: WKWebView) {
+            let error = error as NSError
+            guard webView === page.webView, !BrowserError.isCancellation(error),
+                  let url = (error.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url else { return }
+            page.failure = NavigationFailure(url: url, error: error, date: .now)
+            // WebKit keeps the previous page's URL in the address bar; show the one that failed.
+            model.address = url.absoluteString
         }
     }
 }
