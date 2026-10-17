@@ -1,0 +1,2 @@
+/* Home screen name; Info.plist keeps an ASCII name because re-signing tools use it as the App ID name. */
+"CFBundleDisplayName" = "Рутокен";
