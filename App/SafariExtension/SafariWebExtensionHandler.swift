@@ -67,7 +67,11 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private func status() -> [String: Any] {
         let expiry = SharedPin.load() != nil ? SharedPin.expiry : nil
-        var status: [String: Any] = ["pinShared": expiry != nil, "expires": expiry?.timeIntervalSince1970 ?? 0]
+        var status: [String: Any] = [
+            "pinShared": expiry != nil,
+            "expires": expiry?.timeIntervalSince1970 ?? 0,
+            "sites": TokenSites.domains
+        ]
         if let failure = SharedPin.lastFailure {
             status["failure"] = failure.text
             status["failureAge"] = Date.now.timeIntervalSince(failure.date)

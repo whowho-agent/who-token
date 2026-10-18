@@ -31,6 +31,7 @@ struct SetupHeader: View {
 struct ReadinessSection: View {
     @Bindable var model: SetupModel
     let openRootCertificate: () -> Void
+    let openSites: () -> Void
 
     var body: some View {
         Section {
@@ -38,6 +39,10 @@ struct ReadinessSection: View {
                     detail: model.token != nil ? "Подключён" : "Вставьте USB-токен")
             StepRow(state: model.isRegistered ? .ok : .missing, title: "Сертификат в Safari",
                     detail: model.isRegistered ? "Доступен" : "Не подключён", action: registerAction)
+            Button(action: openSites) {
+                StepRow(state: model.sites.isEmpty ? .missing : .ok, title: "Сайты", detail: sitesDetail, showsChevron: true)
+            }
+            .buttonStyle(.plain)
             StepRow(state: Self.state(model.safariExtensionEnabled), title: "Расширение Safari",
                     detail: extensionDetail, action: extensionAction)
             StepRow(state: Self.siteAccessState(model), title: "Доступ к сайтам",
@@ -58,6 +63,7 @@ struct ReadinessSection: View {
         let states: [StepRow.State] = [
             model.token != nil ? .ok : .missing,
             model.isRegistered ? .ok : .missing,
+            model.sites.isEmpty ? .missing : .ok,
             state(model.safariExtensionEnabled),
             siteAccessState(model),
             model.pinExpiry != nil ? .ok : .missing,
@@ -67,6 +73,10 @@ struct ReadinessSection: View {
     }
 
     // MARK: States
+
+    private var sitesDetail: String {
+        model.sites.isEmpty ? "Укажите сайты организации" : model.sites.joined(separator: ", ")
+    }
 
     private var extensionDetail: String {
         switch model.safariExtensionEnabled {

@@ -32,7 +32,12 @@ final class SetupModel {
         didSet { UserDefaults.standard.set(workSite, forKey: "workSite") }
     }
     private(set) var workSiteTrusted: Bool?
+    /// Sites that sign in with the token; the Safari extension acts only on them.
+    private(set) var sites = TokenSites.domains
     private(set) var isCheckingWorkSite = false
+    /// After the root certificate profile went to Safari: walks the user through installing it and
+    /// turning on full trust, until the work site is trusted.
+    var showsTrustGuide = false
 
     struct Message: Equatable {
         let text: String
@@ -136,7 +141,15 @@ final class SetupModel {
         await refresh()
     }
 
+    func saveSites(_ text: String) {
+        let domains = TokenSites.parse(text)
+        guard domains != sites else { return }
+        TokenSites.domains = domains
+        sites = TokenSites.domains
+    }
+
     func refreshReadiness() async {
+        sites = TokenSites.domains
         extensionReport = SafariExtensionReport.latest
         if #available(iOS 26.2, *) {
             safariExtensionEnabled = try? await SFSafariExtensionManager.stateOfExtension(withIdentifier: Self.safariExtensionID).isEnabled
@@ -156,6 +169,22 @@ final class SetupModel {
         isCheckingWorkSite = true
         defer { isCheckingWorkSite = false }
         workSiteTrusted = try? await RootCertificateFinder.isTrustedBySystem(siteAddress: site)
+        guard TrustGuide.isPending else { return }
+        switch workSiteTrusted {
+        case true?:
+            TrustGuide.finish()
+            showsTrustGuide = false
+            show("Сертификат сервера доверен", isError: false)
+        case false?:
+            showsTrustGuide = true
+        case nil:
+            break
+        }
+    }
+
+    func dismissTrustGuide() {
+        TrustGuide.finish()
+        showsTrustGuide = false
     }
 
     /// Opens Settings → Apps → Safari → Extensions → Рутокен (iOS 26.2+), otherwise the app's settings.
@@ -166,15 +195,6 @@ final class SetupModel {
             }
         } else {
             Self.openAppSettings()
-        }
-    }
-
-    /// Settings → General → About → Certificate Trust Settings. There is no public link; the private
-    /// prefs URL works on current iOS versions, otherwise Settings opens at the app.
-    func openCertificateTrustSettings() {
-        let url = URL(string: "App-prefs:General&path=About/CERT_TRUST_SETTINGS")!
-        UIApplication.shared.open(url) { opened in
-            if !opened { Self.openAppSettings() }
         }
     }
 
@@ -207,5 +227,29 @@ final class SetupModel {
     private func show(_ text: String, isError: Bool) {
         message = Message(text: text, isError: isError)
         AppLog.write("[setup] \(text)")
+    }
+}
+
+/// Remembers that a root certificate profile was offered, so the next return to the app can guide the
+/// user to Certificate Trust Settings: an installed profile alone doesn't make iOS trust the root.
+enum TrustGuide {
+    private static let key = "trustGuide"
+
+    static func start(rootName: String) {
+        UserDefaults.standard.set(["root": rootName, "date": Date.now.timeIntervalSince1970], forKey: key)
+    }
+
+    /// Offered within the last day.
+    static var isPending: Bool {
+        guard let date = (UserDefaults.standard.dictionary(forKey: key)?["date"] as? TimeInterval) else { return false }
+        return Date.now.timeIntervalSince1970 - date < 86_400
+    }
+
+    static var rootName: String? {
+        UserDefaults.standard.dictionary(forKey: key)?["root"] as? String
+    }
+
+    static func finish() {
+        UserDefaults.standard.removeObject(forKey: key)
     }
 }

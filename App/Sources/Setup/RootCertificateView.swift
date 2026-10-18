@@ -41,6 +41,7 @@ final class RootCertificateModel {
         guard let root else { return }
         do {
             let url = try await server.serve(root.mobileConfig(), fileName: "root.mobileconfig")
+            TrustGuide.start(rootName: root.name)
             await UIApplication.shared.open(url)
             profileOffered = true
         } catch {
@@ -51,6 +52,7 @@ final class RootCertificateModel {
 
 struct RootCertificateView: View {
     @State var model: RootCertificateModel
+    @State private var showsTrustGuide = false
 
     var body: some View {
         Form {
@@ -76,6 +78,9 @@ struct RootCertificateView: View {
             if let root = model.root {
                 resultSections(root)
             }
+        }
+        .sheet(isPresented: $showsTrustGuide) {
+            TrustGuideView(site: model.address.trimmingCharacters(in: .whitespaces), rootName: model.root?.name)
         }
         .navigationTitle("Корневой сертификат")
         .navigationBarTitleDisplayMode(.inline)
@@ -110,21 +115,16 @@ struct RootCertificateView: View {
                 Button("Отпечаток совпадает, загрузить профиль", systemImage: "arrow.down.doc") {
                     Task { await model.offerProfile() }
                 }
-                if model.profileOffered {
-                    Button("Профиль установлен — включить доверие", systemImage: "checkmark.shield") {
-                        // No public link to Certificate Trust Settings; the prefs URL works on current iOS,
-                        // otherwise Settings opens at the app.
-                        let trust = URL(string: "App-prefs:General&path=About/CERT_TRUST_SETTINGS")!
-                        UIApplication.shared.open(trust) { opened in
-                            if !opened { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
-                        }
-                    }
+                // Also for a profile installed earlier: iOS trusts it only after the switch is on.
+                Button(model.profileOffered ? "Профиль загружен — что дальше" : "Как включить доверие",
+                       systemImage: "checkmark.shield") {
+                    showsTrustGuide = true
                 }
             } footer: {
                 if model.profileOffered {
-                    Text("В Safari разрешите загрузку профиля, затем: Настройки → «Профиль загружен» → «Установить». После установки нажмите «включить доверие» (Настройки → Основные → Об этом устройстве → Доверие сертификатам) и включите переключатель у сертификата.")
+                    Text("В Safari разрешите загрузку профиля, затем установите его и включите доверие — нажмите кнопку выше, там все шаги.")
                 } else {
-                    Text("Откроется Safari и предложит загрузить профиль конфигурации.")
+                    Text("Откроется Safari и предложит загрузить профиль конфигурации. После установки приложение само подскажет, где включить доверие.")
                 }
             }
         }

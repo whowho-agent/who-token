@@ -1,5 +1,6 @@
 // Hints for signing in with the USB token: a badge when no PIN is entered, and a PIN page in place of
 // Safari's "can't establish a secure connection" when a site needed the token but couldn't get it.
+// Only on the organization's sites listed in the app: elsewhere a failed load is just a network error.
 const api = globalThis.browser;
 
 /** A token problem recorded by the token extension within this many seconds explains a failed load. */
@@ -20,13 +21,29 @@ async function nativeStatus() {
   }
 }
 
-async function updateBadge(status) {
-  status = status ?? await nativeStatus();
-  const needsPin = status && !status.pinShared;
+/** "!" on the toolbar button of a tab showing one of the token sites while no PIN is entered. */
+async function updateBadge(status, tabId, url) {
   try {
-    await api.action.setBadgeText({ text: needsPin ? '!' : '' });
+    if (tabId === undefined || url === undefined) {
+      const [tab] = await api.tabs.query({ active: true, currentWindow: true });
+      if (!tab) return;
+      tabId = tab.id;
+      url = tab.url ?? '';
+    }
+    status = status ?? await nativeStatus();
+    let host = '';
+    try { host = new URL(url).hostname; } catch (e) { /* not a web page */ }
+    const needsPin = status && !status.pinShared && isTokenSite(status, host);
+    await api.action.setBadgeText({ text: needsPin ? '!' : '', tabId });
     await api.action.setBadgeBackgroundColor?.({ color: '#C62828' });
   } catch (e) { /* badges are optional on some Safari versions */ }
+}
+
+/** The host is one of the sites set in the app, or a subdomain of one. */
+function isTokenSite(status, host) {
+  const sites = status?.sites ?? [];
+  host = host.toLowerCase();
+  return sites.some((domain) => host === domain || host.endsWith('.' + domain));
 }
 
 function tokenProblem(status) {
@@ -39,11 +56,12 @@ function tokenProblem(status) {
 api.webNavigation.onErrorOccurred.addListener(async (details) => {
   if (details.frameId !== 0 || !details.url.startsWith('https://')) return;
   const status = await nativeStatus();
-  await updateBadge(status);
+  await updateBadge(status, details.tabId, details.url);
+  const host = new URL(details.url).hostname;
+  if (!isTokenSite(status, host)) return;
   const problem = tokenProblem(status);
   if (!problem) return;
 
-  const host = new URL(details.url).host;
   const key = `prompted:${host}`;
   const { [key]: last } = await api.storage.local.get(key);
   if (last && Date.now() - last < PROMPT_INTERVAL) return;
@@ -74,7 +92,7 @@ async function heartbeat(sawHTTPSPage = false) {
 api.tabs.onActivated.addListener(() => { updateBadge(); heartbeat(); });
 api.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId !== 0) return;
-  updateBadge();
+  updateBadge(null, details.tabId, details.url);
   // Receiving this event for an https page proves access to that site.
   heartbeat(details.url.startsWith('https://'));
 });

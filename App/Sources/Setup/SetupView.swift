@@ -8,13 +8,16 @@ struct SetupView: View {
     /// Site whose root certificate to look up: the work site, or a `rutoken://root?site=` URL from the
     /// Safari extension.
     @State private var rootSite: RootSite?
+    @State private var showsSites = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
             List {
                 Section { SetupHeader(remaining: ReadinessSection.remaining(model)) }
-                ReadinessSection(model: model) { rootSite = RootSite(address: model.workSite) }
+                ReadinessSection(model: model,
+                                 openRootCertificate: { rootSite = RootSite(address: model.workSite) },
+                                 openSites: { showsSites = true })
                 pinSection
                 Section {
                     NavigationLink("Токен и сертификаты") { TokenDetailView(model: model) }
@@ -36,6 +39,10 @@ struct SetupView: View {
                 RootCertificateView(model: RootCertificateModel(address: site.address))
                     .onDisappear { Task { await model.workSiteChanged() } }
             }
+            .sheet(isPresented: $model.showsTrustGuide, onDismiss: model.dismissTrustGuide) {
+                TrustGuideView(site: model.workSite, rootName: TrustGuide.rootName)
+            }
+            .navigationDestination(isPresented: $showsSites) { SitesView(model: model) }
             .onOpenURL { url in
                 // rutoken://root?site=wiki.example.com — opened by the Safari extension.
                 guard url.scheme == "rutoken", url.host() == "root" else { return }

@@ -175,3 +175,43 @@ public enum SafariExtensionReport {
         return Report(date: Date(timeIntervalSince1970: seconds), allSitesAllowed: all, sawHTTPSPage: parts.count > 2 && parts[2] == "1")
     }
 }
+
+/// Sites of the organization that sign in with the token, set in the app. The Safari extension acts
+/// only on them: a failed load elsewhere is an ordinary network error, not a missing PIN.
+public enum TokenSites {
+    private static let account = "token-sites"
+
+    public static var domains: [String] {
+        get {
+            SharedKeychain.get(account: account).map { parse(String(decoding: $0, as: UTF8.self)) } ?? []
+        }
+        set {
+            if newValue.isEmpty {
+                SharedKeychain.delete(account: account)
+            } else {
+                SharedKeychain.set(Data(newValue.joined(separator: ",").utf8), account: account)
+            }
+        }
+    }
+
+    /// Domains from "wiki.example.com, https://mail.example.com/owa, *.corp.example.com": separated by
+    /// commas, spaces or new lines; scheme, path, port and a leading "*." are dropped.
+    public static func parse(_ text: String) -> [String] {
+        var result: [String] = []
+        for item in text.split(whereSeparator: { $0 == "," || $0 == ";" || $0.isWhitespace }) {
+            var domain = item.lowercased()
+            if let range = domain.range(of: "://") { domain = String(domain[range.upperBound...]) }
+            domain = String(domain.prefix { $0 != "/" && $0 != ":" && $0 != "?" && $0 != "#" })
+            while domain.hasPrefix("*.") || domain.hasPrefix(".") { domain.removeFirst(domain.hasPrefix(".") ? 1 : 2) }
+            while domain.hasSuffix(".") { domain.removeLast() }
+            if !domain.isEmpty, !result.contains(domain) { result.append(domain) }
+        }
+        return result
+    }
+
+    /// The host is one of the domains or a subdomain of one.
+    public static func matches(host: String, domains: [String]) -> Bool {
+        let host = host.lowercased()
+        return domains.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+}

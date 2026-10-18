@@ -51,3 +51,20 @@ private func fixture(_ name: String) throws -> Data {
         #expect(SignatureAlgorithm.rsaPkcs1Sha256.pssParams == nil)
     }
 }
+
+@Suite struct TokenSitesTests {
+    @Test func parsesMixedList() {
+        let text = "Wiki.Example.com, https://mail.example.com:443/owa?x=1\n*.corp.example.org; wiki.example.com  .intra."
+        #expect(TokenSites.parse(text) == ["wiki.example.com", "mail.example.com", "corp.example.org", "intra"])
+        #expect(TokenSites.parse(" , ").isEmpty)
+    }
+
+    @Test func matchesDomainAndSubdomains() {
+        let domains = ["example.com"]
+        #expect(TokenSites.matches(host: "example.com", domains: domains))
+        #expect(TokenSites.matches(host: "Wiki.Example.com", domains: domains))
+        #expect(!TokenSites.matches(host: "badexample.com", domains: domains))
+        #expect(!TokenSites.matches(host: "example.com.evil.net", domains: domains))
+        #expect(!TokenSites.matches(host: "example.com", domains: []))
+    }
+}

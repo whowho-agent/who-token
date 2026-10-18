@@ -6,6 +6,7 @@
 #   tools/build-neutral-ipa.sh [bundle-id]          default com.example.RutokenSafari
 set -euo pipefail
 cd "$(dirname "$0")/.."
+ROOT="$PWD"
 
 BUNDLE_ID="${1:-com.example.RutokenSafari}"
 TEAM_PLACEHOLDER="XXXXXXXXXX"
@@ -17,6 +18,8 @@ xcodegen generate -q
 xcodebuild -project Rutoken.xcodeproj -scheme Rutoken -configuration Release \
   -destination 'generic/platform=iOS' -derivedDataPath "$DERIVED" -skipPackagePluginValidation \
   RB_BUNDLE_ID="$BUNDLE_ID" DEVELOPMENT_TEAM= CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+  OTHER_CFLAGS="\$(inherited) -ffile-prefix-map=$ROOT=." \
+  OTHER_SWIFT_FLAGS="\$(inherited) -file-prefix-map $ROOT=." \
   build -quiet
 
 rm -rf "$WORK" && mkdir -p "$WORK/Payload"
